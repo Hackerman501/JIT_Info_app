@@ -19,6 +19,23 @@ static void jit_signal_handler(int sig) {
     siglongjmp(jit_jmp, 1);
 }
 
+static void flush_icache(void *start, void *end) {
+    uintptr_t begin = (uintptr_t)start & ~(uintptr_t)63;
+    uintptr_t stop = ((uintptr_t)end + 63) & ~(uintptr_t)63;
+    uintptr_t p;
+
+    for (p = begin; p < stop; p += 64) {
+        __asm__ __volatile__("dc cvau, %0" :: "r"(p));
+    }
+    __asm__ __volatile__("dsb ish");
+
+    for (p = begin; p < stop; p += 64) {
+        __asm__ __volatile__("ic ivau, %0" :: "r"(p));
+    }
+    __asm__ __volatile__("dsb ish");
+    __asm__ __volatile__("isb");
+}
+
 int jit_probe(void) {
     struct sigaction sa;
     struct sigaction old_ill, old_seg, old_bus, old_trp;
@@ -57,8 +74,7 @@ int jit_probe(void) {
     /* ARM64: RET (return to caller), executes fine iff JIT is allowed */
     uint32_t ret_insn = 0xD65F03C0;
     memcpy(page, &ret_insn, sizeof(ret_insn));
-    __builtin___clear_cache(page, (char *)page + 4096);
-
+    flush_icache(page, (char *)page + 4096);
     if (mprotect(page, 4096, PROT_READ | PROT_EXEC) != 0) {
         munmap(page, 4096);
         sigaction(SIGILL,  &old_ill, NULL);

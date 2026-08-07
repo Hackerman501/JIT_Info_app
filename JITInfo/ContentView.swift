@@ -59,13 +59,13 @@ struct ContentView: View {
             .navigationTitle("JIT Info")
             .navigationBarTitleDisplayMode(.inline)
             .refreshable {
-                await model.refreshAll()
+                model.refreshAll()
             }
             .task {
-                await model.start()
+                model.start()
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    await model.refreshAll()
+                    model.refreshAll()
                 }
             }
             .onDisappear {
