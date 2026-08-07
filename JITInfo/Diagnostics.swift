@@ -757,10 +757,15 @@ final class DiagnosticsModel: ObservableObject {
     @Published var network = "Checking\u{2026}"
     @Published var lastUpdated = Date()
     @Published var jitLog: [JITLogEntry] = []
+    @Published var processes: [ProcessEntry] = []
+    @Published var networkTraffic: NetworkTrafficSnapshot?
+    @Published var networkReceivedRate: Double = 0
+    @Published var networkSentRate: Double = 0
 
     private var monitor: NWPathMonitor?
     private var lastJIT: Bool?
     private let haptic = UINotificationFeedbackGenerator()
+    private var lastNetworkSnapshot: NetworkTrafficSnapshot?
 
     private enum Keys {
         static let mode = "appMode"
@@ -844,6 +849,21 @@ final class DiagnosticsModel: ObservableObject {
         memoryReasons = mem.summary
 
         sections = DeviceInfo.allSections(network: network)
+
+        processes = ProcessManager.list()
+
+        let net = NetworkTraffic.snapshot()
+        if let net = net, let last = lastNetworkSnapshot, net.received >= last.received, net.sent >= last.sent {
+            let elapsed = max(lastUpdated.distance(to: Date()), 0.001)
+            networkReceivedRate = Double(net.received - last.received) / elapsed
+            networkSentRate = Double(net.sent - last.sent) / elapsed
+        } else {
+            networkReceivedRate = 0
+            networkSentRate = 0
+        }
+        lastNetworkSnapshot = net
+        networkTraffic = net
+
         lastUpdated = Date()
     }
 
