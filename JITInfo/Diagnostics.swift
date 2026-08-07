@@ -37,6 +37,7 @@ struct InfoRow: Identifiable {
     let label: String
     let value: String
     var tier: AppMode = .normal
+    var collapsible: Bool = false
 }
 
 struct InfoSection: Identifiable {
@@ -698,8 +699,13 @@ enum DeviceInfo {
             rows.append(InfoRow(label: "Entitlements", value: "none readable", tier: .dev))
         } else {
             for key in keys {
-                let value = all[key].map { "\($0)" } ?? "?"
-                rows.append(InfoRow(label: key, value: value, tier: .dev))
+                guard let raw = all[key] else { continue }
+                let values = key == "keychain-access-groups" ? raw as? [Any] : nil
+                let collapsible = (values?.count ?? 0) > 0
+                let value = collapsible
+                    ? values!.map { "\($0)" }.joined(separator: "\n")
+                    : "\(raw)"
+                rows.append(InfoRow(label: key, value: value, tier: .dev, collapsible: collapsible))
             }
         }
         return InfoSection(titleKey: "section.entitlements", rows: rows)

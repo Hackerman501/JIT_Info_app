@@ -527,24 +527,38 @@ struct InfoRowView: View {
     let onInfo: () -> Void
 
     var body: some View {
-        HStack(alignment: .top) {
-            Text(row.label)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: 220, alignment: .leading)
-            Spacer(minLength: 8)
-            Text(row.value)
-                .multilineTextAlignment(.trailing)
-            if FlagInfo.explanation(for: row.label) != nil {
-                Button(action: onInfo) {
-                    Image(systemName: "info.circle")
-                        .font(.footnote)
-                        .foregroundColor(.accentColor)
-                }
-                .buttonStyle(.borderless)
-                .padding(.leading, 6)
+        if row.collapsible {
+            DisclosureGroup {
+                Text(row.value)
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            } label: {
+                Text(row.label)
+                    .font(.callout)
+                    .foregroundColor(.secondary)
             }
+        } else {
+            HStack(alignment: .top) {
+                Text(row.label)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: 220, alignment: .leading)
+                Spacer(minLength: 8)
+                Text(row.value)
+                    .multilineTextAlignment(.trailing)
+                if FlagInfo.explanation(for: row.label) != nil {
+                    Button(action: onInfo) {
+                        Image(systemName: "info.circle")
+                            .font(.footnote)
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.leading, 6)
+                }
+            }
+            .font(.callout)
         }
-        .font(.callout)
     }
 }
 
