@@ -1,0 +1,6 @@
+#ifndef JITINFO_BRIDGING_HEADER_H
+#define JITINFO_BRIDGING_HEADER_H
+
+#include "jitprobe.h"
+
+#endif /* JITINFO_BRIDGING_HEADER_H */
