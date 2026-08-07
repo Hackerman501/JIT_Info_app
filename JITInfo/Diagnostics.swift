@@ -149,7 +149,7 @@ enum JITDetector {
         let probeText: String
         switch probe {
         case 0:
-            probeText = "RW\u{2192}RX page executed OK"
+            probeText = "RW\u{2192}RX transition granted"
             summary.append("Runtime probe succeeded")
         case -2: probeText = "mmap() failed"
         case -3: probeText = "mprotect(PROT_EXEC) rejected"
