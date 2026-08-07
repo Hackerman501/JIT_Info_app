@@ -5,6 +5,8 @@ import Security
 import Darwin
 import os
 import Network
+import MachO
+import UserNotifications
 
 // MARK: - Modes
 
@@ -43,10 +45,45 @@ struct InfoSection: Identifiable {
     let rows: [InfoRow]
 }
 
+struct JITLogEntry: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let jitOn: Bool
+    let reason: String
+}
+
 // MARK: - JIT detection
 
 private let CS_OPS_STATUS: UInt32 = 0
-private let CS_DEBUGGED: UInt32 = 0x00000800
+private let CS_OPS_ENTITLEMENTS_BLOB: UInt32 = 7
+private let CS_DEBUGGED: UInt32 = 0x10000000
+
+private let CS_FLAG_NAMES: [(value: UInt32, name: String)] = [
+    (0x00000001, "CS_VALID"),
+    (0x00000002, "CS_ADHOC"),
+    (0x00000004, "CS_GET_TASK_ALLOW"),
+    (0x00000008, "CS_INSTALLER"),
+    (0x00000010, "CS_FORCED_LV"),
+    (0x00000020, "CS_INVALID_ALLOWED"),
+    (0x00000100, "CS_HARD"),
+    (0x00000200, "CS_KILL"),
+    (0x00000400, "CS_CHECK_EXPIRATION"),
+    (0x00000800, "CS_RESTRICT"),
+    (0x00001000, "CS_ENFORCEMENT"),
+    (0x00002000, "CS_REQUIRE_LV"),
+    (0x00004000, "CS_ENTITLEMENTS_VALIDATED"),
+    (0x00008000, "CS_NVRAM_UNRESTRICTED"),
+    (0x00010000, "CS_RUNTIME"),
+    (0x00020000, "CS_LINKER_SIGNED"),
+    (0x01000000, "CS_KILLED"),
+    (0x02000000, "CS_DYLD_PLATFORM"),
+    (0x04000000, "CS_PLATFORM_BINARY"),
+    (0x08000000, "CS_PLATFORM_PATH"),
+    (0x10000000, "CS_DEBUGGED"),
+    (0x20000000, "CS_SIGNED"),
+    (0x40000000, "CS_DEV_CODE"),
+    (0x80000000, "CS_DATAVAULT_CONTROLLER")
+]
 
 @_silgen_name("csops")
 private func csops(_ pid: pid_t, _ ops: UInt32, _ useraddr: UnsafeMutableRawPointer?, _ usersize: Int) -> Int32
@@ -80,13 +117,58 @@ enum JITDetector {
     // MARK: entitlements
 
     static func entitlementValue(_ key: String) -> Any? {
-#if os(macOS)
-        guard let task = SecTaskCreateFromSelf(nil) else { return nil }
-        defer { CFRelease(task) }
-        return SecTaskCopyValueForEntitlement(task, key as CFString, nil)
-#else
+        allEntitlements()[key]
+    }
+
+    static func allEntitlements() -> [String: Any] {
+        if let fromBinary = entitlementsFromSection() { return fromBinary }
+        return entitlementsFromCsops()
+    }
+
+    private static func entitlementsFromSection() -> [String: Any]? {
+        guard let header = executableHeader() else { return nil }
+        guard let section = getsectbynamefromheader_64(header, "__TEXT", "__entitlements"),
+              section.pointee.size > 0 else { return nil }
+        let data = Data(bytes: UnsafeRawPointer(header).advanced(by: Int(section.pointee.offset)),
+                        count: Int(section.pointee.size))
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let dict = plist as? [String: Any] else { return nil }
+        return dict
+    }
+
+    private static func entitlementsFromCsops() -> [String: Any] {
+        var header = CSBlobHeader()
+        let headerSize = MemoryLayout<CSBlobHeader>.size
+        let rc = withUnsafeMutablePointer(to: &header) { p in
+            p.withMemoryRebound(to: CChar.self, capacity: headerSize) {
+                csops(getpid(), CS_OPS_ENTITLEMENTS_BLOB, $0, headerSize)
+            }
+        }
+        if rc == 0 { return [:] }
+        guard errno == ERANGE else { return [:] }
+        let bufferLen = Int(header.length.bigEndian)
+        guard bufferLen > 8, bufferLen < 1_048_576 else { return [:] }
+        var buffer = [CChar](repeating: 0, count: bufferLen)
+        guard csops(getpid(), CS_OPS_ENTITLEMENTS_BLOB, &buffer, bufferLen) == 0 else { return [:] }
+        let bytes = buffer.dropFirst(8).map { UInt8(bitPattern: $0) }
+        guard let plist = try? PropertyListSerialization.propertyList(from: Data(bytes), options: [], format: nil),
+              let dict = plist as? [String: Any] else { return [:] }
+        return dict
+    }
+
+    private struct CSBlobHeader {
+        var magic: UInt32 = 0
+        var length: UInt32 = 0
+    }
+
+    private static func executableHeader() -> UnsafePointer<mach_header_64>? {
+        for i in 0..<_dyld_image_count() {
+            guard let header = _dyld_get_image_header(i),
+                  header.pointee.magic == MH_MAGIC_64,
+                  header.pointee.filetype == MH_EXECUTE else { continue }
+            return UnsafeRawPointer(header).assumingMemoryBound(to: mach_header_64.self)
+        }
         return nil
-#endif
     }
 
     static func entitlementBool(_ key: String) -> Bool {
@@ -95,9 +177,19 @@ enum JITDetector {
 
     // MARK: debugger / code-sign state
 
-    static func csDebugged() -> Bool {
+    static func csFlags() -> UInt32? {
         var flags: UInt32 = 0
-        guard csops(getpid(), CS_OPS_STATUS, &flags, MemoryLayout<UInt32>.size) == 0 else { return false }
+        guard csops(getpid(), CS_OPS_STATUS, &flags, MemoryLayout<UInt32>.size) == 0 else { return nil }
+        return flags
+    }
+
+    static func csFlagNames(_ flags: UInt32) -> String {
+        let set = CS_FLAG_NAMES.filter { flags & $0.value != 0 }.map { $0.name }
+        return set.isEmpty ? "none" : set.joined(separator: ", ")
+    }
+
+    static func csDebugged() -> Bool {
+        guard let flags = csFlags() else { return false }
         return (flags & CS_DEBUGGED) != 0
     }
 
@@ -235,6 +327,63 @@ enum JITDetector {
     ]
 }
 
+// MARK: - Flag explanations
+
+enum FlagInfo {
+    static func explanation(for label: String) -> String? {
+        switch label {
+        case "csops CS_DEBUGGED":
+            return "CS_DEBUGGED ist gesetzt, wenn der Prozess gerade oder früher debuggt wurde – der Kernel erlaubt dann JIT über den Debugger."
+        case "sysctl KERN_PROC P_TRACED":
+            return "P_TRACED zeigt einen aktiven ptrace-Debugger an – dadurch ist JIT im Kernel erlaubt."
+        case "Entitlement allow-jit":
+            return "Das Entitlement 'com.apple.security.cs.allow-jit' erlaubt dem Prozess JIT-Mapping (Speicher RW→RX)."
+        case "Entitlement dynamic-codesigning":
+            return "'dynamic-codesigning' erlaubt zur Laufzeit geänderte Code-Signatur-Zustände – Voraussetzung für JIT."
+        case "kern.jit_entitled":
+            return "Kernel-Sysctl: '1' bedeutet, der Prozess ist als JIT-berechtigt markiert."
+        case "Jailbreak hints":
+            return "Typische Jailbreak-/Rootful-Pfade. Existieren sie bzw. sind Systempfade beschreibbar, deutet das auf einen Jailbreak hin."
+        case "Entitlement increased-memory-limit":
+            return "'com.apple.developer.kernel.increased-memory-limit' hebt das Speicherlimit des Prozesses an."
+        case "Entitlement increased-debugging-memory-limit":
+            return "'com.apple.developer.kernel.increased-debugging-memory-limit' erhöht das Speicherlimit zusätzlich für Debug-Aufrufe."
+        case "Entitlement extended-virtual-addressing":
+            return "'com.apple.developer.kernel.extended-virtual-addressing' erlaubt erweiterte virtuelle Adressierung (über 4 GB hinaus)."
+        case "os_proc_available_memory":
+            return "Speichermenge, die der Prozess sicher allokieren darf – hängt von den Kernel-Entitlements ab."
+        case "Share of physical RAM":
+            return "Anteil des physikalischen RAMs, den die App nutzen darf. Über 60 % deutet auf ein erhöhtes Limit hin."
+        case "Likely extended (heuristic)":
+            return "Heuristik: Ist os_proc_available_memory > 60 % des RAMs, wirkt vermutlich ein erhöhtes Limit."
+        case "RLIMIT_AS cur/max":
+            return "Resource-Limit für die virtuelle Adressgröße. 'cur' = aktuell, 'max' = hartes Limit, 'unlimited' = unbegrenzt."
+        case "RLIMIT_DATA cur/max":
+            return "Resource-Limit für Heap bzw. Daten-Segment des Prozesses."
+        case "phys_footprint":
+            return "Physischer Speicherfußabdruck des Prozesses (seit iOS 13 der zuverlässige Wert)."
+        case "Resident size":
+            return "Anteil des Prozesses, der gerade im RAM liegt (nicht ausgelagert)."
+        case "Virtual size":
+            return "Virtuell reservierte Adressmenge – kann deutlich größer als der RAM sein."
+        case "com.apple.security.cs.allow-jit":
+            return "Erlaubt JIT (RW→RX)-Mapping für den Prozess."
+        case "com.apple.developer.kernel.increased-memory-limit":
+            return "Hebt das Speicherlimit des Prozesses an."
+        case "com.apple.developer.kernel.increased-debugging-memory-limit":
+            return "Erhöht das Speicherlimit für Debug-Aufrufe."
+        case "com.apple.developer.kernel.extended-virtual-addressing":
+            return "Erlaubt erweiterte virtuelle Adressierung."
+        case "get-task-allow":
+            return "Erlaubt Debuggern (z.B. Xcode), sich an diese App zu hängen – Voraussetzung für JIT per Debugger."
+        case let l where l.hasPrefix("csops flags"):
+            return "Roh-Flags aus csops(CS_OPS_STATUS): die Code-Signing-Attribute des Prozesses, im Dev-Modus als offizielle Namen decodiert."
+        default:
+            return nil
+        }
+    }
+}
+
 // MARK: - Extended memory detection
 
 enum MemoryDetector {
@@ -345,7 +494,9 @@ enum DeviceInfo {
             screenSection(),
             networkSection(network),
             localeSection(),
-            appSection()
+            appSection(),
+            kernelSection(),
+            entitlementsSection()
         ]
     }
 
@@ -501,6 +652,40 @@ enum DeviceInfo {
         }
         return InfoSection(title: "App", rows: rows)
     }
+
+    static func kernelSection() -> InfoSection {
+        var rows: [InfoRow] = [
+            InfoRow(label: "kern.iossupportversion", value: JITDetector.sysctlString("kern.iossupportversion"), tier: .dev),
+            InfoRow(label: "kern.osproductversion", value: JITDetector.sysctlString("kern.osproductversion"), tier: .dev),
+            InfoRow(label: "kern.osvariant_status", value: JITDetector.sysctlString("kern.osvariant_status"), tier: .dev),
+            InfoRow(label: "kern.securebootstate", value: JITDetector.sysctlString("kern.securebootstate"), tier: .dev),
+            InfoRow(label: "kern.tfp.policy", value: JITDetector.sysctlString("kern.tfp.policy"), tier: .dev),
+            InfoRow(label: "hw.cputype", value: JITDetector.sysctlString("hw.cputype"), tier: .dev),
+            InfoRow(label: "hw.cpusubtype", value: JITDetector.sysctlString("hw.cpusubtype"), tier: .dev),
+            InfoRow(label: "hw.pagesize", value: JITDetector.sysctlString("hw.pagesize"), tier: .dev),
+            InfoRow(label: "hw.l2cachesize", value: JITDetector.sysctlString("hw.l2cachesize"), tier: .dev)
+        ]
+        if let flags = JITDetector.csFlags() {
+            rows.append(InfoRow(label: "csops flags (0x\(String(flags, radix: 16)))",
+                                value: JITDetector.csFlagNames(flags), tier: .dev))
+        }
+        return InfoSection(title: "Kernel", rows: rows)
+    }
+
+    static func entitlementsSection() -> InfoSection {
+        let all = JITDetector.allEntitlements()
+        let keys = all.keys.sorted()
+        var rows: [InfoRow] = []
+        if keys.isEmpty {
+            rows.append(InfoRow(label: "Entitlements", value: "none readable", tier: .dev))
+        } else {
+            for key in keys {
+                let value = all[key].map { "\($0)" } ?? "?"
+                rows.append(InfoRow(label: key, value: value, tier: .dev))
+            }
+        }
+        return InfoSection(title: "Entitlements", rows: rows)
+    }
 }
 
 // MARK: - Network monitor
@@ -531,7 +716,19 @@ enum NetworkStatus {
 
 @MainActor
 final class DiagnosticsModel: ObservableObject {
-    @Published var mode: AppMode = .normal
+    @Published var mode: AppMode = .normal {
+        didSet { UserDefaults.standard.set(mode.rawValue, forKey: Keys.mode) }
+    }
+    @Published var refreshInterval: TimeInterval = 2.0 {
+        didSet { UserDefaults.standard.set(refreshInterval, forKey: Keys.refresh) }
+    }
+    @Published var notifyOnChange = false {
+        didSet {
+            UserDefaults.standard.set(notifyOnChange, forKey: Keys.notify)
+            if notifyOnChange { requestNotificationAuthorization() }
+        }
+    }
+    @Published var notificationsGranted = false
     @Published var jitEnabled = false
     @Published var jitPoints: [InfoRow] = []
     @Published var jitReasons: [String] = []
@@ -541,8 +738,18 @@ final class DiagnosticsModel: ObservableObject {
     @Published var sections: [InfoSection] = []
     @Published var network = "Checking\u{2026}"
     @Published var lastUpdated = Date()
+    @Published var jitLog: [JITLogEntry] = []
 
     private var monitor: NWPathMonitor?
+    private var lastJIT: Bool?
+    private let haptic = UINotificationFeedbackGenerator()
+
+    private enum Keys {
+        static let mode = "appMode"
+        static let refresh = "refreshInterval"
+        static let notify = "notifyOnChange"
+        static let log = "jitLog"
+    }
 
     var visibleJITPoints: [InfoRow] {
         jitPoints.filter { mode.includes($0.tier) }
@@ -559,8 +766,18 @@ final class DiagnosticsModel: ObservableObject {
         }
     }
 
+    var recommendations: [String] {
+        computeRecommendations()
+    }
+
     init() {
         UIDevice.current.isBatteryMonitoringEnabled = true
+        if let m = AppMode(rawValue: UserDefaults.standard.integer(forKey: Keys.mode)) { mode = m }
+        let r = UserDefaults.standard.double(forKey: Keys.refresh)
+        if r > 0 { refreshInterval = r }
+        notifyOnChange = UserDefaults.standard.bool(forKey: Keys.notify)
+        loadLog()
+        lastJIT = jitLog.first?.jitOn
     }
 
     func start() {
@@ -580,6 +797,24 @@ final class DiagnosticsModel: ObservableObject {
 
     func refreshAll() {
         let jit = JITDetector.detectJIT()
+
+        if let last = lastJIT, jit.enabled != last {
+            appendLog(entry: JITLogEntry(id: UUID(), date: Date(), jitOn: jit.enabled,
+                                         reason: jit.summary.first ?? "Status gewechselt"))
+            haptic.notificationOccurred(jit.enabled ? .success : .error)
+            if notifyOnChange && notificationsGranted {
+                let content = UNMutableNotificationContent()
+                content.title = "JIT \(jit.enabled ? "aktiviert" : "deaktiviert")"
+                content.body = jit.summary.first ?? "JIT-Status hat sich geändert"
+                let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+                UNUserNotificationCenter.current().add(request)
+            }
+        } else if lastJIT == nil {
+            appendLog(entry: JITLogEntry(id: UUID(), date: Date(), jitOn: jit.enabled,
+                                         reason: jit.summary.first ?? "Initialstatus"))
+        }
+        lastJIT = jit.enabled
+
         jitEnabled = jit.enabled
         jitPoints = jit.points
         jitReasons = jit.summary
@@ -591,5 +826,86 @@ final class DiagnosticsModel: ObservableObject {
 
         sections = DeviceInfo.allSections(network: network)
         lastUpdated = Date()
+    }
+
+    func reportText() -> String {
+        var lines: [String] = []
+        lines.append("JIT Info Report \u{2013} \(Date().formatted(date: .long, time: .standard))")
+        lines.append("")
+        lines.append("JIT: \(jitEnabled ? "ON" : "OFF")")
+        lines.append("Extended Memory: \(extendedMemory ? "ON" : "OFF")")
+        if !jitReasons.isEmpty { lines.append("JIT Grund: \(jitReasons.joined(separator: ", "))") }
+        if !memoryReasons.isEmpty { lines.append("Extended Memory Grund: \(memoryReasons.joined(separator: ", "))") }
+        if !recommendations.isEmpty {
+            lines.append("")
+            lines.append("## Empfehlung")
+            lines.append(contentsOf: recommendations)
+        }
+        lines.append("")
+        for section in sections {
+            let visible = section.rows.filter { mode.includes($0.tier) }
+            guard !visible.isEmpty else { continue }
+            lines.append("## \(section.title)")
+            for row in visible {
+                lines.append("\(row.label): \(row.value)")
+            }
+            lines.append("")
+        }
+        if !jitLog.isEmpty {
+            let f = DateFormatter()
+            f.dateFormat = "dd.MM. HH:mm:ss"
+            lines.append("## JIT Verlauf")
+            for entry in jitLog {
+                lines.append("\(f.string(from: entry.date)) \u{2013} JIT \(entry.jitOn ? "ON" : "OFF") \u{2013} \(entry.reason)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func computeRecommendations() -> [String] {
+        if jitEnabled {
+            var lines = ["JIT ist aktiv \u{2013} nichts weiter n\u{00F6}tig."]
+            if let first = jitReasons.first { lines.append("Grund: \(first)") }
+            return lines
+        }
+        let jailbroken = !JITDetector.jailbrokenHints().isEmpty
+        let parts = UIDevice.current.systemVersion.split(separator: ".")
+        let major = parts.first.flatMap { Int($0) } ?? 0
+        let minor = parts.dropFirst().first.flatMap { Int($0) } ?? 0
+        if major > 18 || (major == 18 && minor >= 4) {
+            if jailbroken {
+                return ["iOS 18.4+ mit Jailbreak: JIT per Debugger-Tool aktivieren, z.B. debugserver aus Sileo/Cydia.",
+                        "Alternativ eine App mit eingebauter JIT-Unterst\u{00FC}tzung verwenden (JITStreamer, iDownload)."]
+            }
+            return ["iOS 18.4+: JIT ist nur noch \u{00FC}ber Xcode-Debugger oder TrollStore 3 m\u{00F6}glich.",
+                    "TrollStore 3 installieren (permanentes JIT) oder am Mac mit Xcode debuggen."]
+        }
+        if jailbroken {
+            return ["Jailbreak erkannt: JIT per Jailbreak aktivieren, z.B. via debugserver oder einem JIT-Enable-Tweak."]
+        }
+        return ["JIT \u{00FC}ber den Sideloader aktivieren: AltStore \u{201E}Enable JIT\u{201C}, SideStore, Sideloadly oder JITStreamer.",
+                "Tipp: Mit einem PC/Mac-Begleitprogramm l\u{00E4}sst sich JIT auch ohne Jailbreak schalten."]
+    }
+
+    private func appendLog(entry: JITLogEntry) {
+        jitLog.insert(entry, at: 0)
+        if jitLog.count > 100 { jitLog = Array(jitLog.prefix(100)) }
+        if let data = try? JSONEncoder().encode(jitLog) {
+            UserDefaults.standard.set(data, forKey: Keys.log)
+        }
+    }
+
+    private func loadLog() {
+        guard let data = UserDefaults.standard.data(forKey: Keys.log),
+              let entries = try? JSONDecoder().decode([JITLogEntry].self, from: data) else { return }
+        jitLog = entries
+    }
+
+    private func requestNotificationAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            Task { @MainActor in
+                self.notificationsGranted = granted
+            }
+        }
     }
 }

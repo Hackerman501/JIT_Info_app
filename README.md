@@ -36,8 +36,24 @@ Die App hat **drei Modi** (oben umschaltbar):
 Gerät/Modell, iOS/Kernel-Version, CPU, RAM, Speicherplatz, Akku, Display,
 Netzwerkstatus (NWPathMonitor), Locale, App/Bundle-Daten, PID/PPID.
 
-Die Status-Cards aktualisieren sich alle 2 Sekunden (JIT kann sich ändern, wenn
-ein Debugger andockt).
+## Zusätzliche Features
+
+- **Empfehlung** – die App wertet iOS-Version, Jailbreak-Hinweise und JIT-Status aus
+  und schlägt den passenden Weg vor (TrollStore 3, Xcode, Sideloader-„Enable JIT“ …).
+- **JIT-Verlauf** – jeder JIT-Wechsel (z. B. Debugger andockt) wird mit Zeitstempel
+  gespeichert (Experte/Dev) und beim Neustart wieder geladen.
+- **Flag-Erklärungen** – hinter jedem Check-Row erklärt ein ⓘ-Button, was das Flag bedeutet.
+- **Report teilen** – Share-Button oben rechts exportiert den kompletten Report als Text.
+- **Einstellungen** – Update-Intervall wählbar (1–30 s) und Benachrichtigung bei
+  JIT-Wechsel (Haptik + lokale Notification), alles wird gespeichert.
+- **Kernel-Detail (Dev)** – `kern.iossupportversion`, `kern.osvariant_status`,
+  `kern.securebootstate`, `kern.tfp.policy`, Cache-Größen und alle `csops`-Flags
+  mit offiziellen Namen (inkl. korrektem `CS_DEBUGGED`-Bit).
+- **Alle Entitlements (Dev)** – liest den `__TEXT,__entitlements`-Bereich des Binaries
+  (Fallback über `csops CS_OPS_ENTITLEMENTS_BLOB`) und listet alle Entitlements auf.
+
+Die Status-Cards aktualisieren sich im einstellbaren Intervall (JIT kann sich ändern,
+wenn ein Debugger andockt).
 
 ## .ipa bauen
 

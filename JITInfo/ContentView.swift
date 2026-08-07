@@ -3,6 +3,7 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var model = DiagnosticsModel()
+    @State private var showShare = false
 
     var body: some View {
         NavigationView {
@@ -35,6 +36,31 @@ struct ContentView: View {
                     .labelsHidden()
                 }
 
+                Section {
+                    HStack {
+                        Text("Update interval")
+                        Spacer()
+                        Picker("Update interval", selection: $model.refreshInterval) {
+                            Text("1 s").tag(1.0)
+                            Text("2 s").tag(2.0)
+                            Text("5 s").tag(5.0)
+                            Text("10 s").tag(10.0)
+                            Text("30 s").tag(30.0)
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                    Toggle("Notify on JIT change", isOn: $model.notifyOnChange)
+                } header: {
+                    Text("Settings")
+                } footer: {
+                    if model.notifyOnChange {
+                        Text(model.notificationsGranted
+                             ? "Benachrichtigungen aktiv \u{2013} du wirst bei jedem JIT-Wechsel informiert."
+                             : "Bitte erlaube Benachrichtigungen in den iOS-Einstellungen.")
+                    }
+                }
+
                 Section("Status") {
                     HStack(alignment: .top, spacing: 10) {
                         StatusCard(title: "JIT",
@@ -52,6 +78,16 @@ struct ContentView: View {
                     }
                 }
 
+                if !model.recommendations.isEmpty {
+                    Section("Empfehlung") {
+                        ForEach(model.recommendations, id: \.self) { r in
+                            Text(r)
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
                 if !model.visibleJITPoints.isEmpty {
                     Section("JIT checks") {
                         ForEach(model.visibleJITPoints) { InfoRowView(row: $0) }
@@ -64,6 +100,32 @@ struct ContentView: View {
                     }
                 }
 
+                if model.mode != .normal {
+                    Section("JIT Verlauf") {
+                        if model.jitLog.isEmpty {
+                            Text("Noch keine Eintr\u{00E4}ge")
+                                .font(.callout)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ForEach(model.jitLog) { entry in
+                                HStack(alignment: .top) {
+                                    Text(entry.date, format: .dateTime.hour().minute().second())
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(entry.jitOn ? "ON" : "OFF")
+                                        .font(.callout.bold())
+                                        .foregroundColor(entry.jitOn ? .green : .red)
+                                    Spacer(minLength: 8)
+                                    Text(entry.reason)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.trailing)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 ForEach(model.visibleSections) { section in
                     Section(header: Text(section.title)) {
                         ForEach(section.rows) { InfoRowView(row: $0) }
@@ -72,13 +134,23 @@ struct ContentView: View {
             }
             .navigationTitle("JIT Info")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showShare = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Report teilen")
+                }
+            }
             .refreshable {
                 model.refreshAll()
             }
             .task {
                 model.start()
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    try? await Task.sleep(nanoseconds: UInt64(model.refreshInterval * 1_000_000_000))
                     model.refreshAll()
                 }
             }
@@ -86,6 +158,9 @@ struct ContentView: View {
                 Task { @MainActor in
                     model.stop()
                 }
+            }
+            .sheet(isPresented: $showShare) {
+                ActivityView(items: [model.reportText()])
             }
         }
     }
@@ -131,6 +206,7 @@ struct StatusCard: View {
 
 struct InfoRowView: View {
     let row: InfoRow
+    @State private var showInfo = false
 
     var body: some View {
         HStack(alignment: .top) {
@@ -140,7 +216,33 @@ struct InfoRowView: View {
             Spacer(minLength: 8)
             Text(row.value)
                 .multilineTextAlignment(.trailing)
+            if FlagInfo.explanation(for: row.label) != nil {
+                Button {
+                    showInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.footnote)
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.borderless)
+                .padding(.leading, 6)
+                .alert("\(row.label)", isPresented: $showInfo) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(FlagInfo.explanation(for: row.label) ?? "")
+                }
+            }
         }
         .font(.callout)
     }
+}
+
+struct ActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
