@@ -152,11 +152,20 @@ private let enStrings: [String: String] = [
     "status.updated": "Updated",
     "status.jitChecks": "JIT checks",
     "status.memoryChecks": "Extended Memory checks",
+    "status.battery": "Battery",
+    "status.battery.charging": "Charging",
+    "status.battery.full": "Full",
+    "status.battery.unplugged": "Not charging",
+    "status.battery.unknown": "Unknown",
+    "status.battery.low": "Battery below 20% \u{2013} JIT sessions may end abruptly when the device sleeps.",
 
     "recommendation.title": "Recommendation",
 
     "history.title": "JIT History",
     "history.empty": "No entries yet",
+    "history.export": "Export",
+    "history.export.csv": "CSV",
+    "history.export.json": "JSON",
 
     "report.shareAccessibility": "Share report",
     "report.title": "JIT Info Report \u{2014} %@",
@@ -275,11 +284,20 @@ private let deStrings: [String: String] = [
     "status.updated": "Aktualisiert",
     "status.jitChecks": "JIT-Checks",
     "status.memoryChecks": "Extended-Memory-Checks",
+    "status.battery": "Akku",
+    "status.battery.charging": "L\u{00E4}dt",
+    "status.battery.full": "Voll",
+    "status.battery.unplugged": "Nicht am Ladeger\u{00E4}t",
+    "status.battery.unknown": "Unbekannt",
+    "status.battery.low": "Akku unter 20 % \u{2013} JIT-Sitzungen k\u{00F6}nnen beim Schlafenlegen des Ger\u{00E4}ts abrupt enden.",
 
     "recommendation.title": "Empfehlung",
 
     "history.title": "JIT-Verlauf",
     "history.empty": "Noch keine Eintr\u{00E4}ge",
+    "history.export": "Exportieren",
+    "history.export.csv": "CSV",
+    "history.export.json": "JSON",
 
     "report.shareAccessibility": "Report teilen",
     "report.title": "JIT Info Report \u{2013} %@",

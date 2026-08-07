@@ -145,6 +145,21 @@ struct StatusTab: View {
                 }
             }
 
+            Section(l10n.localize("status.battery")) {
+                BatteryRow()
+                if let warning = batteryWarning() {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(warning)
+                            .font(.footnote)
+                            .foregroundColor(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
             if !model.recommendations.isEmpty {
                 Section(l10n.localize("recommendation.title")) {
                     ForEach(model.recommendations, id: \.self) { r in
@@ -177,11 +192,12 @@ struct DetailsTab: View {
     @ObservedObject var model: DiagnosticsModel
     @Binding var infoRow: InfoRow?
     @EnvironmentObject private var l10n: LanguageManager
+    @State private var exportText: ExportText?
 
     var body: some View {
         List {
             if model.mode != .normal {
-                Section(l10n.localize("history.title")) {
+                DisclosureGroup {
                     if model.jitLog.isEmpty {
                         Text(l10n.localize("history.empty"))
                             .font(.callout)
@@ -202,7 +218,29 @@ struct DetailsTab: View {
                                     .multilineTextAlignment(.trailing)
                             }
                         }
+                        HStack {
+                            Spacer()
+                            Menu {
+                                Button {
+                                    exportText = ExportText(model.historyCSV())
+                                } label: {
+                                    Label(l10n.localize("history.export.csv"), systemImage: "tablecells")
+                                }
+                                Button {
+                                    exportText = ExportText(model.historyJSON())
+                                } label: {
+                                    Label(l10n.localize("history.export.json"), systemImage: "curlybraces")
+                                }
+                            } label: {
+                                Label(l10n.localize("history.export"), systemImage: "square.and.arrow.up")
+                            }
+                        }
+                        .padding(.top, 4)
                     }
+                } label: {
+                    Text(l10n.localize("history.title"))
+                        .font(.callout)
+                        .foregroundColor(.primary)
                 }
             }
 
@@ -215,6 +253,18 @@ struct DetailsTab: View {
         .refreshable {
             model.refreshAll()
         }
+        .sheet(item: $exportText) { item in
+            ActivityView(items: [item.text])
+        }
+    }
+}
+
+private struct ExportText: Identifiable {
+    let id = UUID()
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
     }
 }
 
@@ -519,6 +569,62 @@ struct StatusCard: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
+    }
+}
+
+private func batteryWarning() -> String? {
+    let device = UIDevice.current
+    let level = device.batteryLevel
+    guard level >= 0 else { return nil }
+    if level < 0.2 && device.batteryState != .charging {
+        return LanguageManager.shared.localize("status.battery.low")
+    }
+    return nil
+}
+
+struct BatteryRow: View {
+    @EnvironmentObject private var l10n: LanguageManager
+
+    var body: some View {
+        let device = UIDevice.current
+        let level = device.batteryLevel
+        HStack {
+            Image(systemName: batteryIcon(level: level, state: device.batteryState))
+                .font(.title2)
+                .foregroundColor(batteryColor(level: level))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(level >= 0 ? "\(Int(level * 100)) %" : "n/a")
+                    .font(.callout.weight(.semibold))
+                Text(batteryStateText(device.batteryState))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+    }
+
+    private func batteryIcon(level: Float, state: UIDevice.BatteryState) -> String {
+        if state == .charging { return "bolt.fill" }
+        let pct = level >= 0 ? level * 100 : 0
+        switch pct {
+        case ..<25: return "battery.25"
+        case ..<50: return "battery.50"
+        case ..<75: return "battery.75"
+        default: return "battery.100"
+        }
+    }
+
+    private func batteryColor(level: Float) -> Color {
+        level >= 0 && level < 0.2 ? .red : .primary
+    }
+
+    private func batteryStateText(_ state: UIDevice.BatteryState) -> String {
+        switch state {
+        case .charging: return l10n.localize("status.battery.charging")
+        case .full: return l10n.localize("status.battery.full")
+        case .unplugged: return l10n.localize("status.battery.unplugged")
+        default: return l10n.localize("status.battery.unknown")
+        }
     }
 }
 

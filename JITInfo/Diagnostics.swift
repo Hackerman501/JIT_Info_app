@@ -33,7 +33,7 @@ enum AppMode: Int, CaseIterable, Identifiable {
 // MARK: - Models
 
 struct InfoRow: Identifiable {
-    let id = UUID()
+    var id: String { label }
     let label: String
     let value: String
     var tier: AppMode = .normal
@@ -41,7 +41,7 @@ struct InfoRow: Identifiable {
 }
 
 struct InfoSection: Identifiable {
-    let id = UUID()
+    var id: String { titleKey }
     let titleKey: String
     let rows: [InfoRow]
 
@@ -622,12 +622,31 @@ enum DeviceInfo {
 
     static func screenSection() -> InfoSection {
         let screen = UIScreen.main
-        return InfoSection(titleKey: "section.screen", rows: [
+        var rows: [InfoRow] = [
             InfoRow(label: "Bounds", value: "\(Int(screen.bounds.width)) x \(Int(screen.bounds.height))", tier: .expert),
             InfoRow(label: "Scale", value: String(format: "@%.0fx", screen.scale), tier: .expert),
             InfoRow(label: "Native", value: "\(Int(screen.nativeBounds.width)) x \(Int(screen.nativeBounds.height))", tier: .expert),
             InfoRow(label: "Max FPS", value: "\(screen.maximumFramesPerSecond)", tier: .expert)
-        ])
+        ]
+        if screen.maximumFramesPerSecond > 0 {
+            rows.append(InfoRow(label: "Frame duration (min)",
+                                value: String(format: "%.2f ms", 1000.0 / Double(screen.maximumFramesPerSecond)),
+                                tier: .dev))
+        }
+        rows.append(InfoRow(label: "Brightness", value: "\(Int(screen.brightness * 100)) %", tier: .dev))
+        rows.append(InfoRow(label: "True Tone", value: trueToneState(), tier: .dev))
+        return InfoSection(titleKey: "section.screen", rows: rows)
+    }
+
+    private static func trueToneState() -> String {
+        let screen = UIScreen.main
+        let sel = Selector(("_trueToneEnabled"))
+        guard screen.responds(to: sel) else { return "n/a" }
+        guard let result = screen.perform(sel) else { return "n/a" }
+        if let value = result.takeUnretainedValue() as? NSNumber {
+            return value.boolValue ? "YES" : "NO"
+        }
+        return "n/a"
     }
 
     static func networkSection(_ status: String) -> InfoSection {
@@ -907,6 +926,27 @@ final class DiagnosticsModel: ObservableObject {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    func historyCSV() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        var lines = ["date,jitOn,reason"]
+        for entry in jitLog {
+            let date = f.string(from: entry.date)
+            let on = entry.jitOn ? "ON" : "OFF"
+            let reason = entry.reason.replacingOccurrences(of: "\"", with: "\"\"")
+            lines.append("\"\(date)\",\"\(on)\",\"\(reason)\"")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func historyJSON() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let items = jitLog.map { ["date": f.string(from: $0.date), "jitOn": $0.jitOn, "reason": $0.reason] }
+        let data = (try? JSONSerialization.data(withJSONObject: items, options: [.prettyPrinted])) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "[]"
     }
 
     private func computeRecommendations() -> [String] {
