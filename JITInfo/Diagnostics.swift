@@ -461,6 +461,7 @@ enum MemoryDetector {
 
         let likely = ratio > 0.60
         points.append(InfoRow(label: "Likely extended (heuristic)", value: likely ? "YES" : "NO", tier: .expert))
+        if likely { summary.append("os_proc_available_memory > 60 % of RAM (heuristic)") }
 
         let asLim = rlimitValue(RLIMIT_AS)
         let dataLim = rlimitValue(RLIMIT_DATA)
@@ -473,7 +474,7 @@ enum MemoryDetector {
             points.append(InfoRow(label: "Virtual size", value: bytes(Int64(vm.virtual)), tier: .dev))
         }
 
-        let extended = incLimit || incDebug || extVA
+        let extended = incLimit || incDebug || extVA || likely
         return MemoryResult(extended: extended,
                             points: points,
                             summary: summary.isEmpty ? ["No extended-memory source detected"] : summary)
