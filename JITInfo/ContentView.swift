@@ -51,7 +51,7 @@ struct ContentView: View {
                 }
 
                 ForEach(model.sections) { section in
-                    Section(Text(section.title)) {
+                    Section(header: Text(section.title)) {
                         ForEach(section.rows) { InfoRowView(row: $0) }
                     }
                 }

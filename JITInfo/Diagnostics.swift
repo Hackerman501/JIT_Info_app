@@ -57,9 +57,13 @@ enum JITDetector {
     // MARK: entitlements
 
     static func entitlementValue(_ key: String) -> Any? {
+#if os(macOS)
         guard let task = SecTaskCreateFromSelf(nil) else { return nil }
         defer { CFRelease(task) }
         return SecTaskCopyValueForEntitlement(task, key as CFString, nil)
+#else
+        return nil
+#endif
     }
 
     static func entitlementBool(_ key: String) -> Bool {
@@ -233,7 +237,7 @@ enum MemoryDetector {
     }
 
     static func limitText(_ v: UInt64) -> String {
-        if v == UInt64(RLIM_INFINITY) { return "unlimited" }
+        if v == UInt64(Int64.max) { return "unlimited" }
         return bytes(Int64(v))
     }
 
