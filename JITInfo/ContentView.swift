@@ -264,11 +264,10 @@ struct ProcessesTab: View {
     @State private var terminateError: TerminateError?
 
     private func terminate(_ entry: ProcessEntry) {
-        switch ProcessManager.terminate(pid: entry.pid) {
-        case .success:
-            model.refreshAll()
-        case .failure(let message):
+        if let message = ProcessManager.terminate(pid: entry.pid) {
             terminateError = TerminateError(message: message)
+        } else {
+            model.refreshAll()
         }
     }
 }

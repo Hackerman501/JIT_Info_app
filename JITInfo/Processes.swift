@@ -91,21 +91,22 @@ enum ProcessManager {
             let name = commString(p.kp_proc.p_comm)
             let state = stateString(p.kp_proc.p_stat)
 
-            let user = timevalMicros(p.kp_proc.p_ru.ru_utime)
-            let sys = timevalMicros(p.kp_proc.p_ru.ru_stime)
+            let info = taskInfo(pid: pid)
+            let user = info?.totalUser ?? 0
+            let sys = info?.totalSystem ?? 0
+            let memory = info?.residentSize ?? 0
+
             var cpu = 0.0
             if let prev = lastSnapshots[pid] {
                 let dUser = user > prev.user ? user - prev.user : 0
                 let dSys = sys > prev.sys ? sys - prev.sys : 0
                 let dWall = now - prev.wall
                 if dWall > 0 {
-                    cpu = min((Double(dUser + dSys) / 1_000_000.0) / dWall * 100.0,
-                              100.0 * cpuCount)
+                    let seconds = (Double(dUser) + Double(dSys)) / 1_000_000.0
+                    cpu = min(seconds / dWall * 100.0, 100.0 * cpuCount)
                 }
             }
             current[pid] = Snapshot(user: user, sys: sys, wall: now)
-
-            let memory = taskInfo(pid: pid)?.residentSize ?? 0
 
             entries.append(ProcessEntry(pid: pid,
                                         name: name.isEmpty ? "\(pid)" : name,
@@ -125,11 +126,9 @@ enum ProcessManager {
     }
 
     @discardableResult
-    static func terminate(pid: pid_t) -> Result<Void, String> {
-        if kill(pid, SIGKILL) == 0 {
-            return .success(())
-        }
-        return .failure(String(cString: strerror(errno)))
+    static func terminate(pid: pid_t) -> String? {
+        if kill(pid, SIGKILL) == 0 { return nil }
+        return String(cString: strerror(errno))
     }
 
     // MARK: helpers
@@ -153,9 +152,5 @@ enum ProcessManager {
         default: return "\(stat)"
         }
         return LanguageManager.shared.localize(key)
-    }
-
-    private static func timevalMicros(_ tv: timeval) -> UInt64 {
-        UInt64(max(tv.tv_sec, 0)) * 1_000_000 + UInt64(max(tv.tv_usec, 0))
     }
 }
