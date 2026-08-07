@@ -29,7 +29,8 @@ Die App hat **drei Modi** (oben umschaltbar):
 - Entitlement `com.apple.developer.kernel.increased-memory-limit`
 - Entitlement `com.apple.developer.kernel.increased-debugging-memory-limit`
 - Entitlement `com.apple.developer.kernel.extended-virtual-addressing`
-- `os_proc_available_memory()` + Anteil an physikalischem RAM (Heuristik > 60 %)
+- Geschätztes Speicherlimit = `os_proc_available_memory()` + `phys_footprint`,
+  Anteil am physikalischen RAM (Verdict „Extended Memory" ab ≥ 70 %)
 - `RLIMIT_AS` / `RLIMIT_DATA`, `phys_footprint`, VM-Statistiken
 
 ### Sonstiges

@@ -355,10 +355,12 @@ enum FlagInfo {
             return l10n.localize("expl.extendedVA")
         case "os_proc_available_memory":
             return l10n.localize("expl.availableMemory")
+        case "Memory limit (est.)":
+            return l10n.localize("expl.memoryLimit")
         case "Share of physical RAM":
             return l10n.localize("expl.ramShare")
-        case "Likely extended (heuristic)":
-            return l10n.localize("expl.heuristic")
+        case "Extended memory verdict":
+            return l10n.localize("expl.extendedVerdict")
         case "RLIMIT_AS cur/max":
             return l10n.localize("expl.rlimitAS")
         case "RLIMIT_DATA cur/max":
@@ -448,39 +450,51 @@ enum MemoryDetector {
         let incLimit = JITDetector.entitlementBool("com.apple.developer.kernel.increased-memory-limit")
         let incDebug = JITDetector.entitlementBool("com.apple.developer.kernel.increased-debugging-memory-limit")
         let extVA = JITDetector.entitlementBool("com.apple.developer.kernel.extended-virtual-addressing")
+        let entitled = incLimit || incDebug || extVA
 
         points.append(InfoRow(label: "Entitlement increased-memory-limit", value: incLimit ? "YES" : "NO", tier: .expert))
         points.append(InfoRow(label: "Entitlement increased-debugging-memory-limit", value: incDebug ? "YES" : "NO", tier: .expert))
         points.append(InfoRow(label: "Entitlement extended-virtual-addressing", value: extVA ? "YES" : "NO", tier: .expert))
-        if incLimit { summary.append("increased-memory-limit entitlement") }
-        if incDebug { summary.append("increased-debugging-memory-limit entitlement") }
-        if extVA { summary.append("extended-virtual-addressing entitlement") }
 
         let ram = Int64(ProcessInfo.processInfo.physicalMemory)
         let avail = Int64(os_proc_available_memory())
-        let ratio = ram > 0 ? Double(avail) / Double(ram) : 0
+        let vm = taskVM()
+        let footprint = Int64(vm?.footprint ?? 0)
+        // os_proc_available_memory() reports the bytes REMAINING until the dirty memory
+        // limit is hit, so the actual limit ≈ remaining + current footprint.
+        let limit = avail + footprint
+        let ratio = ram > 0 ? Double(limit) / Double(ram) : 0
+
         points.append(InfoRow(label: "os_proc_available_memory", value: bytes(avail), tier: .expert))
+        points.append(InfoRow(label: "Memory limit (est.)", value: "\(bytes(limit)) of \(bytes(ram))", tier: .expert))
         points.append(InfoRow(label: "Share of physical RAM", value: String(format: "%.0f %%", ratio * 100), tier: .expert))
 
-        let likely = ratio > 0.60
-        points.append(InfoRow(label: "Likely extended (heuristic)", value: likely ? "YES" : "NO", tier: .expert))
-        if likely { summary.append("os_proc_available_memory > 60 % of RAM (heuristic)") }
+        // Verdict is based on the measured limit, not on entitlement presence alone:
+        // the default iOS limit is ~50 % of RAM, so a limit clearly above that means
+        // the entitlement was actually granted by the kernel.
+        let extended = ratio >= 0.70
+        points.append(InfoRow(label: "Extended memory verdict", value: extended ? "YES" : "NO", tier: .expert))
+
+        if extended {
+            summary.append("Memory limit raised (~\(Int(ratio * 100)) % of RAM, measured)")
+        } else if entitled {
+            summary.append("Entitlement present, but limit not raised")
+        } else {
+            summary.append("Default memory limit (~\(Int(ratio * 100)) % of RAM)")
+        }
 
         let asLim = rlimitValue(RLIMIT_AS)
         let dataLim = rlimitValue(RLIMIT_DATA)
         points.append(InfoRow(label: "RLIMIT_AS cur/max", value: "\(limitText(asLim.cur)) / \(limitText(asLim.max))", tier: .dev))
         points.append(InfoRow(label: "RLIMIT_DATA cur/max", value: "\(limitText(dataLim.cur)) / \(limitText(dataLim.max))", tier: .dev))
 
-        if let vm = taskVM() {
+        if let vm = vm {
             points.append(InfoRow(label: "phys_footprint", value: bytes(Int64(vm.footprint)), tier: .dev))
             points.append(InfoRow(label: "Resident size", value: bytes(Int64(vm.resident)), tier: .dev))
             points.append(InfoRow(label: "Virtual size", value: bytes(Int64(vm.virtual)), tier: .dev))
         }
 
-        let extended = incLimit || incDebug || extVA || likely
-        return MemoryResult(extended: extended,
-                            points: points,
-                            summary: summary.isEmpty ? ["No extended-memory source detected"] : summary)
+        return MemoryResult(extended: extended, points: points, summary: summary)
     }
 }
 
