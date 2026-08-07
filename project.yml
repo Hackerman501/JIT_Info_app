@@ -1,6 +1,7 @@
 name: JITInfo
 options:
-  minimumXcodeGenVersion: 2.30.0
+  minimumXcodeGenVersion: 2.35.0
+  projectFormat: xcode15_3
   deploymentTarget:
     iOS: "15.0"
   createIntermediateGroups: true
