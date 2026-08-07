@@ -836,7 +836,7 @@ final class DiagnosticsModel: ObservableObject {
     func reportText() -> String {
         let l10n = LanguageManager.shared
         var lines: [String] = []
-        let now = Date().formatted(.dateTime.locale(l10n.locale).date(.long).time(.standard))
+        let now = Date().formatted(Date.FormatStyle(date: .long, time: .standard, locale: l10n.locale))
         lines.append(l10n.localize("report.title", now))
         lines.append("")
         lines.append("JIT: \(jitEnabled ? l10n.localize("report.on") : l10n.localize("report.off"))")
