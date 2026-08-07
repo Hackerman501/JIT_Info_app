@@ -3,6 +3,8 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var model = DiagnosticsModel()
+    @EnvironmentObject private var l10n: LanguageManager
+    @AppStorage("appearance") private var appearance = AppAppearance.system
     @State private var showShare = false
 
     var body: some View {
@@ -38,7 +40,31 @@ struct ContentView: View {
 
                 Section {
                     HStack {
-                        Text("Update interval")
+                        Text(l10n.localize("settings.language"))
+                        Spacer()
+                        Picker(selection: Binding(get: { l10n.language }, set: { l10n.setLanguage($0) })) {
+                            ForEach(AppLanguage.allCases) { lang in
+                                Text(lang.title).tag(lang)
+                            }
+                        } label: {
+                            Text(l10n.localize("settings.language"))
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                    HStack {
+                        Text(l10n.localize("settings.appearance"))
+                        Spacer()
+                        Picker("Appearance", selection: $appearance) {
+                            ForEach(AppAppearance.allCases) { a in
+                                Text(a.title).tag(a)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                    HStack {
+                        Text(l10n.localize("settings.updateInterval"))
                         Spacer()
                         Picker("Update interval", selection: $model.refreshInterval) {
                             Text("1 s").tag(1.0)
@@ -50,18 +76,18 @@ struct ContentView: View {
                         .pickerStyle(.menu)
                         .labelsHidden()
                     }
-                    Toggle("Notify on JIT change", isOn: $model.notifyOnChange)
+                    Toggle(l10n.localize("settings.notify"), isOn: $model.notifyOnChange)
                 } header: {
-                    Text("Settings")
+                    Text(l10n.localize("settings.title"))
                 } footer: {
                     if model.notifyOnChange {
                         Text(model.notificationsGranted
-                             ? "Benachrichtigungen aktiv \u{2013} du wirst bei jedem JIT-Wechsel informiert."
-                             : "Bitte erlaube Benachrichtigungen in den iOS-Einstellungen.")
+                             ? l10n.localize("settings.notificationsActive")
+                             : l10n.localize("settings.notificationsDenied"))
                     }
                 }
 
-                Section("Status") {
+                Section(l10n.localize("status.title")) {
                     HStack(alignment: .top, spacing: 10) {
                         StatusCard(title: "JIT",
                                    enabled: model.jitEnabled,
@@ -72,14 +98,14 @@ struct ContentView: View {
                     }
                     HStack {
                         Spacer()
-                        Text("Updated \(model.lastUpdated, format: .dateTime.hour().minute().second())")
+                        Text("\(l10n.localize("status.updated")) \(model.lastUpdated.formatted(.dateTime.hour().minute().second()))")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 }
 
                 if !model.recommendations.isEmpty {
-                    Section("Empfehlung") {
+                    Section(l10n.localize("recommendation.title")) {
                         ForEach(model.recommendations, id: \.self) { r in
                             Text(r)
                                 .font(.callout)
@@ -89,21 +115,21 @@ struct ContentView: View {
                 }
 
                 if !model.visibleJITPoints.isEmpty {
-                    Section("JIT checks") {
+                    Section(l10n.localize("status.jitChecks")) {
                         ForEach(model.visibleJITPoints) { InfoRowView(row: $0) }
                     }
                 }
 
                 if !model.visibleMemoryPoints.isEmpty {
-                    Section("Extended Memory checks") {
+                    Section(l10n.localize("status.memoryChecks")) {
                         ForEach(model.visibleMemoryPoints) { InfoRowView(row: $0) }
                     }
                 }
 
                 if model.mode != .normal {
-                    Section("JIT Verlauf") {
+                    Section(l10n.localize("history.title")) {
                         if model.jitLog.isEmpty {
-                            Text("Noch keine Eintr\u{00E4}ge")
+                            Text(l10n.localize("history.empty"))
                                 .font(.callout)
                                 .foregroundColor(.secondary)
                         } else {
@@ -132,7 +158,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("JIT Info")
+            .navigationTitle(l10n.localize("app.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -141,7 +167,7 @@ struct ContentView: View {
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
-                    .accessibilityLabel("Report teilen")
+                    .accessibilityLabel(l10n.localize("report.shareAccessibility"))
                 }
             }
             .refreshable {
@@ -163,6 +189,7 @@ struct ContentView: View {
                 ActivityView(items: [model.reportText()])
             }
         }
+        .preferredColorScheme(appearance.colorScheme)
     }
 }
 

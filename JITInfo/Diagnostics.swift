@@ -19,9 +19,9 @@ enum AppMode: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .normal: return "Normal"
-        case .expert: return "Experte"
-        case .dev: return "Dev"
+        case .normal: return LanguageManager.shared.localize("mode.normal")
+        case .expert: return LanguageManager.shared.localize("mode.expert")
+        case .dev: return LanguageManager.shared.localize("mode.dev")
         }
     }
 
@@ -41,8 +41,10 @@ struct InfoRow: Identifiable {
 
 struct InfoSection: Identifiable {
     let id = UUID()
-    let title: String
+    let titleKey: String
     let rows: [InfoRow]
+
+    var title: String { LanguageManager.shared.localize(titleKey) }
 }
 
 struct JITLogEntry: Identifiable, Codable {
@@ -331,53 +333,54 @@ enum JITDetector {
 
 enum FlagInfo {
     static func explanation(for label: String) -> String? {
+        let l10n = LanguageManager.shared
         switch label {
         case "csops CS_DEBUGGED":
-            return "CS_DEBUGGED ist gesetzt, wenn der Prozess gerade oder früher debuggt wurde – der Kernel erlaubt dann JIT über den Debugger."
+            return l10n.localize("expl.csopsDebugged")
         case "sysctl KERN_PROC P_TRACED":
-            return "P_TRACED zeigt einen aktiven ptrace-Debugger an – dadurch ist JIT im Kernel erlaubt."
+            return l10n.localize("expl.ptraced")
         case "Entitlement allow-jit":
-            return "Das Entitlement 'com.apple.security.cs.allow-jit' erlaubt dem Prozess JIT-Mapping (Speicher RW→RX)."
+            return l10n.localize("expl.allowJit")
         case "Entitlement dynamic-codesigning":
-            return "'dynamic-codesigning' erlaubt zur Laufzeit geänderte Code-Signatur-Zustände – Voraussetzung für JIT."
+            return l10n.localize("expl.dynamicCodesigning")
         case "kern.jit_entitled":
-            return "Kernel-Sysctl: '1' bedeutet, der Prozess ist als JIT-berechtigt markiert."
+            return l10n.localize("expl.jitEntitled")
         case "Jailbreak hints":
-            return "Typische Jailbreak-/Rootful-Pfade. Existieren sie bzw. sind Systempfade beschreibbar, deutet das auf einen Jailbreak hin."
+            return l10n.localize("expl.jailbreakHints")
         case "Entitlement increased-memory-limit":
-            return "'com.apple.developer.kernel.increased-memory-limit' hebt das Speicherlimit des Prozesses an."
+            return l10n.localize("expl.increasedMemory")
         case "Entitlement increased-debugging-memory-limit":
-            return "'com.apple.developer.kernel.increased-debugging-memory-limit' erhöht das Speicherlimit zusätzlich für Debug-Aufrufe."
+            return l10n.localize("expl.increasedDebug")
         case "Entitlement extended-virtual-addressing":
-            return "'com.apple.developer.kernel.extended-virtual-addressing' erlaubt erweiterte virtuelle Adressierung (über 4 GB hinaus)."
+            return l10n.localize("expl.extendedVA")
         case "os_proc_available_memory":
-            return "Speichermenge, die der Prozess sicher allokieren darf – hängt von den Kernel-Entitlements ab."
+            return l10n.localize("expl.availableMemory")
         case "Share of physical RAM":
-            return "Anteil des physikalischen RAMs, den die App nutzen darf. Über 60 % deutet auf ein erhöhtes Limit hin."
+            return l10n.localize("expl.ramShare")
         case "Likely extended (heuristic)":
-            return "Heuristik: Ist os_proc_available_memory > 60 % des RAMs, wirkt vermutlich ein erhöhtes Limit."
+            return l10n.localize("expl.heuristic")
         case "RLIMIT_AS cur/max":
-            return "Resource-Limit für die virtuelle Adressgröße. 'cur' = aktuell, 'max' = hartes Limit, 'unlimited' = unbegrenzt."
+            return l10n.localize("expl.rlimitAS")
         case "RLIMIT_DATA cur/max":
-            return "Resource-Limit für Heap bzw. Daten-Segment des Prozesses."
+            return l10n.localize("expl.rlimitData")
         case "phys_footprint":
-            return "Physischer Speicherfußabdruck des Prozesses (seit iOS 13 der zuverlässige Wert)."
+            return l10n.localize("expl.physFootprint")
         case "Resident size":
-            return "Anteil des Prozesses, der gerade im RAM liegt (nicht ausgelagert)."
+            return l10n.localize("expl.resident")
         case "Virtual size":
-            return "Virtuell reservierte Adressmenge – kann deutlich größer als der RAM sein."
+            return l10n.localize("expl.virtual")
         case "com.apple.security.cs.allow-jit":
-            return "Erlaubt JIT (RW→RX)-Mapping für den Prozess."
+            return l10n.localize("expl.allowJitShort")
         case "com.apple.developer.kernel.increased-memory-limit":
-            return "Hebt das Speicherlimit des Prozesses an."
+            return l10n.localize("expl.increasedMemoryShort")
         case "com.apple.developer.kernel.increased-debugging-memory-limit":
-            return "Erhöht das Speicherlimit für Debug-Aufrufe."
+            return l10n.localize("expl.increasedDebugShort")
         case "com.apple.developer.kernel.extended-virtual-addressing":
-            return "Erlaubt erweiterte virtuelle Adressierung."
+            return l10n.localize("expl.extendedVAShort")
         case "get-task-allow":
-            return "Erlaubt Debuggern (z.B. Xcode), sich an diese App zu hängen – Voraussetzung für JIT per Debugger."
+            return l10n.localize("expl.getTaskAllow")
         case let l where l.hasPrefix("csops flags"):
-            return "Roh-Flags aus csops(CS_OPS_STATUS): die Code-Signing-Attribute des Prozesses, im Dev-Modus als offizielle Namen decodiert."
+            return l10n.localize("expl.csopsFlags")
         default:
             return nil
         }
@@ -529,7 +532,7 @@ enum DeviceInfo {
             InfoRow(label: "Uptime", value: uptime(), tier: .expert),
             InfoRow(label: "Jailbroken hints", value: JITDetector.jailbrokenHints().isEmpty ? "No" : "Yes", tier: .expert)
         ])
-        return InfoSection(title: "System", rows: rows)
+        return InfoSection(titleKey: "section.system", rows: rows)
     }
 
     static func cpuSection() -> InfoSection {
@@ -548,7 +551,7 @@ enum DeviceInfo {
         if let mem = JITDetector.sysctlUInt64("hw.memsize") {
             rows.append(InfoRow(label: "Physical RAM", value: MemoryDetector.bytes(Int64(mem)), tier: .expert))
         }
-        return InfoSection(title: "CPU & RAM", rows: rows)
+        return InfoSection(titleKey: "section.cpuRam", rows: rows)
     }
 
     static func memorySection() -> InfoSection {
@@ -569,7 +572,7 @@ enum DeviceInfo {
         }
         let asLim = MemoryDetector.rlimitValue(RLIMIT_AS)
         rows.append(InfoRow(label: "RLIMIT_AS cur/max", value: "\(MemoryDetector.limitText(asLim.cur)) / \(MemoryDetector.limitText(asLim.max))", tier: .dev))
-        return InfoSection(title: "Memory", rows: rows)
+        return InfoSection(titleKey: "section.memory", rows: rows)
     }
 
     static func storageSection() -> InfoSection {
@@ -582,7 +585,7 @@ enum DeviceInfo {
                 rows.append(InfoRow(label: "Disk free", value: MemoryDetector.bytes(Int64(free))))
             }
         }
-        return InfoSection(title: "Storage", rows: rows.isEmpty ? [InfoRow(label: "Storage", value: "n/a")] : rows)
+        return InfoSection(titleKey: "section.storage", rows: rows.isEmpty ? [InfoRow(label: "Storage", value: "n/a")] : rows)
     }
 
     static func batterySection() -> InfoSection {
@@ -596,7 +599,7 @@ enum DeviceInfo {
         default: stateText = "Unknown"
         }
         let levelText = level < 0 ? "n/a" : "\(Int(level * 100)) %"
-        return InfoSection(title: "Battery", rows: [
+        return InfoSection(titleKey: "section.battery", rows: [
             InfoRow(label: "Level", value: levelText, tier: .expert),
             InfoRow(label: "State", value: stateText, tier: .expert)
         ])
@@ -604,7 +607,7 @@ enum DeviceInfo {
 
     static func screenSection() -> InfoSection {
         let screen = UIScreen.main
-        return InfoSection(title: "Screen", rows: [
+        return InfoSection(titleKey: "section.screen", rows: [
             InfoRow(label: "Bounds", value: "\(Int(screen.bounds.width)) x \(Int(screen.bounds.height))", tier: .expert),
             InfoRow(label: "Scale", value: String(format: "@%.0fx", screen.scale), tier: .expert),
             InfoRow(label: "Native", value: "\(Int(screen.nativeBounds.width)) x \(Int(screen.nativeBounds.height))", tier: .expert),
@@ -613,12 +616,12 @@ enum DeviceInfo {
     }
 
     static func networkSection(_ status: String) -> InfoSection {
-        InfoSection(title: "Network", rows: [InfoRow(label: "Status", value: status, tier: .expert)])
+        InfoSection(titleKey: "section.network", rows: [InfoRow(label: "Status", value: status, tier: .expert)])
     }
 
     static func localeSection() -> InfoSection {
         let l = Locale.current
-        return InfoSection(title: "Locale", rows: [
+        return InfoSection(titleKey: "section.locale", rows: [
             InfoRow(label: "Locale", value: l.identifier, tier: .expert),
             InfoRow(label: "Region", value: l.regionCode ?? "n/a", tier: .expert),
             InfoRow(label: "Language", value: Locale.preferredLanguages.first ?? "n/a", tier: .expert),
@@ -651,7 +654,7 @@ enum DeviceInfo {
             let present = JITDetector.entitlementBool(key)
             rows.append(InfoRow(label: "Entitlement \(short)", value: present ? "present" : "absent", tier: .dev))
         }
-        return InfoSection(title: "App", rows: rows)
+        return InfoSection(titleKey: "section.app", rows: rows)
     }
 
     static func kernelSection() -> InfoSection {
@@ -670,7 +673,7 @@ enum DeviceInfo {
             rows.append(InfoRow(label: "csops flags (0x\(String(flags, radix: 16)))",
                                 value: JITDetector.csFlagNames(flags), tier: .dev))
         }
-        return InfoSection(title: "Kernel", rows: rows)
+        return InfoSection(titleKey: "section.kernel", rows: rows)
     }
 
     static func entitlementsSection() -> InfoSection {
@@ -685,7 +688,7 @@ enum DeviceInfo {
                 rows.append(InfoRow(label: key, value: value, tier: .dev))
             }
         }
-        return InfoSection(title: "Entitlements", rows: rows)
+        return InfoSection(titleKey: "section.entitlements", rows: rows)
     }
 }
 
@@ -763,7 +766,7 @@ final class DiagnosticsModel: ObservableObject {
     var visibleSections: [InfoSection] {
         sections.compactMap { section in
             let rows = section.rows.filter { mode.includes($0.tier) }
-            return rows.isEmpty ? nil : InfoSection(title: section.title, rows: rows)
+            return rows.isEmpty ? nil : InfoSection(titleKey: section.titleKey, rows: rows)
         }
     }
 
@@ -799,20 +802,21 @@ final class DiagnosticsModel: ObservableObject {
     func refreshAll() {
         let jit = JITDetector.detectJIT()
 
+        let l10n = LanguageManager.shared
         if let last = lastJIT, jit.enabled != last {
             appendLog(entry: JITLogEntry(id: UUID(), date: Date(), jitOn: jit.enabled,
-                                         reason: jit.summary.first ?? "Status gewechselt"))
+                                         reason: jit.summary.first ?? l10n.localize("notif.logChanged")))
             haptic.notificationOccurred(jit.enabled ? .success : .error)
             if notifyOnChange && notificationsGranted {
                 let content = UNMutableNotificationContent()
-                content.title = "JIT \(jit.enabled ? "aktiviert" : "deaktiviert")"
-                content.body = jit.summary.first ?? "JIT-Status hat sich geändert"
+                content.title = l10n.localize(jit.enabled ? "notif.jitOn" : "notif.jitOff")
+                content.body = jit.summary.first ?? l10n.localize("notif.jitChanged")
                 let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
                 UNUserNotificationCenter.current().add(request)
             }
         } else if lastJIT == nil {
             appendLog(entry: JITLogEntry(id: UUID(), date: Date(), jitOn: jit.enabled,
-                                         reason: jit.summary.first ?? "Initialstatus"))
+                                         reason: jit.summary.first ?? l10n.localize("notif.logInitial")))
         }
         lastJIT = jit.enabled
 
@@ -830,16 +834,18 @@ final class DiagnosticsModel: ObservableObject {
     }
 
     func reportText() -> String {
+        let l10n = LanguageManager.shared
         var lines: [String] = []
-        lines.append("JIT Info Report \u{2013} \(Date().formatted(date: .long, time: .standard))")
+        let now = Date().formatted(.dateTime.locale(l10n.locale).date(.long).time(.standard))
+        lines.append(l10n.localize("report.title", now))
         lines.append("")
-        lines.append("JIT: \(jitEnabled ? "ON" : "OFF")")
-        lines.append("Extended Memory: \(extendedMemory ? "ON" : "OFF")")
-        if !jitReasons.isEmpty { lines.append("JIT Grund: \(jitReasons.joined(separator: ", "))") }
-        if !memoryReasons.isEmpty { lines.append("Extended Memory Grund: \(memoryReasons.joined(separator: ", "))") }
+        lines.append("JIT: \(jitEnabled ? l10n.localize("report.on") : l10n.localize("report.off"))")
+        lines.append("Extended Memory: \(extendedMemory ? l10n.localize("report.on") : l10n.localize("report.off"))")
+        if !jitReasons.isEmpty { lines.append(l10n.localize("report.jitReason", jitReasons.joined(separator: ", "))) }
+        if !memoryReasons.isEmpty { lines.append(l10n.localize("report.memoryReason", memoryReasons.joined(separator: ", "))) }
         if !recommendations.isEmpty {
             lines.append("")
-            lines.append("## Empfehlung")
+            lines.append(l10n.localize("report.recommendation"))
             lines.append(contentsOf: recommendations)
         }
         lines.append("")
@@ -855,18 +861,19 @@ final class DiagnosticsModel: ObservableObject {
         if !jitLog.isEmpty {
             let f = DateFormatter()
             f.dateFormat = "dd.MM. HH:mm:ss"
-            lines.append("## JIT Verlauf")
+            lines.append(l10n.localize("report.history"))
             for entry in jitLog {
-                lines.append("\(f.string(from: entry.date)) \u{2013} JIT \(entry.jitOn ? "ON" : "OFF") \u{2013} \(entry.reason)")
+                lines.append("\(f.string(from: entry.date)) \u{2013} JIT \(entry.jitOn ? l10n.localize("report.on") : l10n.localize("report.off")) \u{2013} \(entry.reason)")
             }
         }
         return lines.joined(separator: "\n")
     }
 
     private func computeRecommendations() -> [String] {
+        let l10n = LanguageManager.shared
         if jitEnabled {
-            var lines = ["JIT ist aktiv \u{2013} nichts weiter n\u{00F6}tig."]
-            if let first = jitReasons.first { lines.append("Grund: \(first)") }
+            var lines = [l10n.localize("rec.jitActive")]
+            if let first = jitReasons.first { lines.append(l10n.localize("rec.reason", first)) }
             return lines
         }
         let jailbroken = !JITDetector.jailbrokenHints().isEmpty
@@ -875,17 +882,17 @@ final class DiagnosticsModel: ObservableObject {
         let minor = parts.dropFirst().first.flatMap { Int($0) } ?? 0
         if major > 18 || (major == 18 && minor >= 4) {
             if jailbroken {
-                return ["iOS 18.4+ mit Jailbreak: JIT per Debugger-Tool aktivieren, z.B. debugserver aus Sileo/Cydia.",
-                        "Alternativ eine App mit eingebauter JIT-Unterst\u{00FC}tzung verwenden (JITStreamer, iDownload)."]
+                return [l10n.localize("rec.ios184Jb1"),
+                        l10n.localize("rec.ios184Jb2")]
             }
-            return ["iOS 18.4+: JIT ist nur noch \u{00FC}ber Xcode-Debugger oder TrollStore 3 m\u{00F6}glich.",
-                    "TrollStore 3 installieren (permanentes JIT) oder am Mac mit Xcode debuggen."]
+            return [l10n.localize("rec.ios184NoJb1"),
+                    l10n.localize("rec.ios184NoJb2")]
         }
         if jailbroken {
-            return ["Jailbreak erkannt: JIT per Jailbreak aktivieren, z.B. via debugserver oder einem JIT-Enable-Tweak."]
+            return [l10n.localize("rec.jb1")]
         }
-        return ["JIT \u{00FC}ber den Sideloader aktivieren: AltStore \u{201E}Enable JIT\u{201C}, SideStore, Sideloadly oder JITStreamer.",
-                "Tipp: Mit einem PC/Mac-Begleitprogramm l\u{00E4}sst sich JIT auch ohne Jailbreak schalten."]
+        return [l10n.localize("rec.noJb1"),
+                l10n.localize("rec.noJb2")]
     }
 
     private func appendLog(entry: JITLogEntry) {

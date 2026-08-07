@@ -1,4 +1,4 @@
-# JIT Info
+# iOS Info App
 
 Eine schnelle System-/Debug-Info-App für iOS. Zeigt alles Wichtige über dein Gerät
 und die beiden wichtigsten Sideloading-Werte:
@@ -46,6 +46,8 @@ Netzwerkstatus (NWPathMonitor), Locale, App/Bundle-Daten, PID/PPID.
 - **Report teilen** – Share-Button oben rechts exportiert den kompletten Report als Text.
 - **Einstellungen** – Update-Intervall wählbar (1–30 s) und Benachrichtigung bei
   JIT-Wechsel (Haptik + lokale Notification), alles wird gespeichert.
+- **Sprache** – Deutsch oder Englisch direkt in der App wählbar („System“ = Gerätesprache).
+- **Darstellung** – Hell/Dunkel direkt in der App umschaltbar („System“ = Geräte-Einstellung).
 - **Kernel-Detail (Dev)** – `kern.iossupportversion`, `kern.osvariant_status`,
   `kern.securebootstate`, `kern.tfp.policy`, Cache-Größen und alle `csops`-Flags
   mit offiziellen Namen (inkl. korrektem `CS_DEBUGGED`-Bit).
