@@ -25,6 +25,16 @@ struct ContentView: View {
                     .padding(.vertical, 4)
                 }
 
+                Section {
+                    Picker("Modus", selection: $model.mode) {
+                        ForEach(AppMode.allCases) { m in
+                            Text(m.title).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
                 Section("Status") {
                     HStack(alignment: .top, spacing: 10) {
                         StatusCard(title: "JIT",
@@ -42,15 +52,19 @@ struct ContentView: View {
                     }
                 }
 
-                Section("JIT checks") {
-                    ForEach(model.jitPoints) { InfoRowView(row: $0) }
+                if !model.visibleJITPoints.isEmpty {
+                    Section("JIT checks") {
+                        ForEach(model.visibleJITPoints) { InfoRowView(row: $0) }
+                    }
                 }
 
-                Section("Extended Memory checks") {
-                    ForEach(model.memoryPoints) { InfoRowView(row: $0) }
+                if !model.visibleMemoryPoints.isEmpty {
+                    Section("Extended Memory checks") {
+                        ForEach(model.visibleMemoryPoints) { InfoRowView(row: $0) }
+                    }
                 }
 
-                ForEach(model.sections) { section in
+                ForEach(model.visibleSections) { section in
                     Section(header: Text(section.title)) {
                         ForEach(section.rows) { InfoRowView(row: $0) }
                     }

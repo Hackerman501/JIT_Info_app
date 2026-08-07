@@ -6,12 +6,35 @@ import Darwin
 import os
 import Network
 
+// MARK: - Modes
+
+enum AppMode: Int, CaseIterable, Identifiable {
+    case normal = 0
+    case expert = 1
+    case dev = 2
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .normal: return "Normal"
+        case .expert: return "Experte"
+        case .dev: return "Dev"
+        }
+    }
+
+    func includes(_ tier: AppMode) -> Bool {
+        rawValue >= tier.rawValue
+    }
+}
+
 // MARK: - Models
 
 struct InfoRow: Identifiable {
     let id = UUID()
     let label: String
     let value: String
+    var tier: AppMode = .normal
 }
 
 struct InfoSection: Identifiable {
@@ -125,40 +148,30 @@ enum JITDetector {
         var summary: [String] = []
 
         let debugged = csDebugged()
-        points.append(InfoRow(label: "csops CS_DEBUGGED", value: debugged ? "YES" : "NO"))
+        points.append(InfoRow(label: "csops CS_DEBUGGED", value: debugged ? "YES" : "NO", tier: .expert))
         if debugged { summary.append("Debugger attached (CS_DEBUGGED set)") }
 
         let traced = tracedSysctl()
-        points.append(InfoRow(label: "sysctl KERN_PROC P_TRACED", value: traced ? "YES" : "NO"))
+        points.append(InfoRow(label: "sysctl KERN_PROC P_TRACED", value: traced ? "YES" : "NO", tier: .expert))
+        if traced { summary.append("Debugger attached (P_TRACED set)") }
 
         let allowJIT = entitlementBool("com.apple.security.cs.allow-jit")
-        points.append(InfoRow(label: "Entitlement allow-jit", value: allowJIT ? "YES" : "NO"))
+        points.append(InfoRow(label: "Entitlement allow-jit", value: allowJIT ? "YES" : "NO", tier: .expert))
         if allowJIT { summary.append("com.apple.security.cs.allow-jit entitlement") }
 
         let dynSign = entitlementBool("dynamic-codesigning")
-        points.append(InfoRow(label: "Entitlement dynamic-codesigning", value: dynSign ? "YES" : "NO"))
+        points.append(InfoRow(label: "Entitlement dynamic-codesigning", value: dynSign ? "YES" : "NO", tier: .expert))
         if dynSign { summary.append("dynamic-codesigning entitlement") }
 
-        points.append(InfoRow(label: "kern.jit_entitled", value: kernJITEntitled()))
+        let kernJIT = kernJITEntitled()
+        points.append(InfoRow(label: "kern.jit_entitled", value: kernJIT, tier: .expert))
+        if kernJIT == "1" { summary.append("kern.jit_entitled = 1") }
 
         let jb = jailbrokenHints()
-        points.append(InfoRow(label: "Jailbreak hints", value: jb.isEmpty ? "none" : jb.joined(separator: ", ")))
+        points.append(InfoRow(label: "Jailbreak hints", value: jb.isEmpty ? "none" : jb.joined(separator: ", "), tier: .expert))
         if !jb.isEmpty { summary.append("Jailbroken / rootful environment") }
 
-        let probe = jit_probe()
-        let probeText: String
-        switch probe {
-        case 0:
-            probeText = "RW\u{2192}RX transition granted"
-            summary.append("Runtime probe succeeded")
-        case -2: probeText = "mmap() failed"
-        case -3: probeText = "mprotect(PROT_EXEC) rejected"
-        case -4: probeText = "probe setup failed"
-        default: probeText = "trapped (signal \(probe))"
-        }
-        points.append(InfoRow(label: "Runtime RW\u{2192}RX probe", value: probeText))
-
-        let enabled = debugged || traced || allowJIT || dynSign || !jb.isEmpty || probe == 0
+        let enabled = debugged || traced || allowJIT || dynSign || kernJIT == "1" || !jb.isEmpty
         return JITResult(enabled: enabled,
                          points: points,
                          summary: summary.isEmpty ? ["No JIT source detected"] : summary)
@@ -284,9 +297,9 @@ enum MemoryDetector {
         let incDebug = JITDetector.entitlementBool("com.apple.developer.kernel.increased-debugging-memory-limit")
         let extVA = JITDetector.entitlementBool("com.apple.developer.kernel.extended-virtual-addressing")
 
-        points.append(InfoRow(label: "Entitlement increased-memory-limit", value: incLimit ? "YES" : "NO"))
-        points.append(InfoRow(label: "Entitlement increased-debugging-memory-limit", value: incDebug ? "YES" : "NO"))
-        points.append(InfoRow(label: "Entitlement extended-virtual-addressing", value: extVA ? "YES" : "NO"))
+        points.append(InfoRow(label: "Entitlement increased-memory-limit", value: incLimit ? "YES" : "NO", tier: .expert))
+        points.append(InfoRow(label: "Entitlement increased-debugging-memory-limit", value: incDebug ? "YES" : "NO", tier: .expert))
+        points.append(InfoRow(label: "Entitlement extended-virtual-addressing", value: extVA ? "YES" : "NO", tier: .expert))
         if incLimit { summary.append("increased-memory-limit entitlement") }
         if incDebug { summary.append("increased-debugging-memory-limit entitlement") }
         if extVA { summary.append("extended-virtual-addressing entitlement") }
@@ -294,25 +307,24 @@ enum MemoryDetector {
         let ram = Int64(ProcessInfo.processInfo.physicalMemory)
         let avail = Int64(os_proc_available_memory())
         let ratio = ram > 0 ? Double(avail) / Double(ram) : 0
-        points.append(InfoRow(label: "os_proc_available_memory", value: bytes(avail)))
-        points.append(InfoRow(label: "Share of physical RAM", value: String(format: "%.0f %%", ratio * 100)))
+        points.append(InfoRow(label: "os_proc_available_memory", value: bytes(avail), tier: .expert))
+        points.append(InfoRow(label: "Share of physical RAM", value: String(format: "%.0f %%", ratio * 100), tier: .expert))
 
         let likely = ratio > 0.60
-        points.append(InfoRow(label: "Likely extended (heuristic)", value: likely ? "YES" : "NO"))
-        if likely { summary.append("os_proc_available_memory > 60 % of RAM") }
+        points.append(InfoRow(label: "Likely extended (heuristic)", value: likely ? "YES" : "NO", tier: .expert))
 
         let asLim = rlimitValue(RLIMIT_AS)
         let dataLim = rlimitValue(RLIMIT_DATA)
-        points.append(InfoRow(label: "RLIMIT_AS cur/max", value: "\(limitText(asLim.cur)) / \(limitText(asLim.max))"))
-        points.append(InfoRow(label: "RLIMIT_DATA cur/max", value: "\(limitText(dataLim.cur)) / \(limitText(dataLim.max))"))
+        points.append(InfoRow(label: "RLIMIT_AS cur/max", value: "\(limitText(asLim.cur)) / \(limitText(asLim.max))", tier: .dev))
+        points.append(InfoRow(label: "RLIMIT_DATA cur/max", value: "\(limitText(dataLim.cur)) / \(limitText(dataLim.max))", tier: .dev))
 
         if let vm = taskVM() {
-            points.append(InfoRow(label: "phys_footprint", value: bytes(Int64(vm.footprint))))
-            points.append(InfoRow(label: "Resident size", value: bytes(Int64(vm.resident))))
-            points.append(InfoRow(label: "Virtual size", value: bytes(Int64(vm.virtual))))
+            points.append(InfoRow(label: "phys_footprint", value: bytes(Int64(vm.footprint)), tier: .dev))
+            points.append(InfoRow(label: "Resident size", value: bytes(Int64(vm.resident)), tier: .dev))
+            points.append(InfoRow(label: "Virtual size", value: bytes(Int64(vm.virtual)), tier: .dev))
         }
 
-        let extended = incLimit || incDebug || extVA || likely
+        let extended = incLimit || incDebug || extVA
         return MemoryResult(extended: extended,
                             points: points,
                             summary: summary.isEmpty ? ["No extended-memory source detected"] : summary)
@@ -352,18 +364,18 @@ enum DeviceInfo {
         var rows: [InfoRow] = [
             InfoRow(label: "Device name", value: UIDevice.current.name),
             InfoRow(label: "Product type", value: UIDevice.current.model),
-            InfoRow(label: "Model identifier", value: JITDetector.sysctlString("hw.machine"))
+            InfoRow(label: "Model identifier", value: JITDetector.sysctlString("hw.machine"), tier: .expert)
         ]
         if let name = JITDetector.marketingName() {
             rows.append(InfoRow(label: "Marketing name", value: name))
         }
         rows.append(contentsOf: [
-            InfoRow(label: "SoC / board", value: JITDetector.sysctlString("hw.model")),
+            InfoRow(label: "SoC / board", value: JITDetector.sysctlString("hw.model"), tier: .dev),
             InfoRow(label: "iOS version", value: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"),
-            InfoRow(label: "Kernel release", value: JITDetector.sysctlString("kern.osrelease")),
-            InfoRow(label: "Kernel build", value: JITDetector.sysctlString("kern.osversion")),
-            InfoRow(label: "Uptime", value: uptime()),
-            InfoRow(label: "Jailbroken hints", value: JITDetector.jailbrokenHints().isEmpty ? "No" : "Yes")
+            InfoRow(label: "Kernel release", value: JITDetector.sysctlString("kern.osrelease"), tier: .expert),
+            InfoRow(label: "Kernel build", value: JITDetector.sysctlString("kern.osversion"), tier: .dev),
+            InfoRow(label: "Uptime", value: uptime(), tier: .expert),
+            InfoRow(label: "Jailbroken hints", value: JITDetector.jailbrokenHints().isEmpty ? "No" : "Yes", tier: .expert)
         ])
         return InfoSection(title: "System", rows: rows)
     }
@@ -371,40 +383,40 @@ enum DeviceInfo {
     static func cpuSection() -> InfoSection {
         var rows: [InfoRow] = []
         if let ncpu = JITDetector.sysctlInt32("hw.ncpu") {
-            rows.append(InfoRow(label: "CPU count", value: "\(ncpu)"))
+            rows.append(InfoRow(label: "CPU count", value: "\(ncpu)", tier: .expert))
         }
         if let pcpu = JITDetector.sysctlInt32("hw.physicalcpu") {
-            rows.append(InfoRow(label: "Physical cores", value: "\(pcpu)"))
+            rows.append(InfoRow(label: "Physical cores", value: "\(pcpu)", tier: .expert))
         }
         if let freq = JITDetector.sysctlUInt64("hw.cpufrequency"), freq > 0 {
-            rows.append(InfoRow(label: "CPU frequency", value: "\(freq / 1_000_000) MHz"))
+            rows.append(InfoRow(label: "CPU frequency", value: "\(freq / 1_000_000) MHz", tier: .dev))
         }
         let subtype = JITDetector.sysctlInt32("hw.cpusubtype")
-        rows.append(InfoRow(label: "Architecture", value: subtype == 2 ? "arm64e" : "arm64"))
+        rows.append(InfoRow(label: "Architecture", value: subtype == 2 ? "arm64e" : "arm64", tier: .dev))
         if let mem = JITDetector.sysctlUInt64("hw.memsize") {
-            rows.append(InfoRow(label: "Physical RAM", value: MemoryDetector.bytes(Int64(mem))))
+            rows.append(InfoRow(label: "Physical RAM", value: MemoryDetector.bytes(Int64(mem)), tier: .expert))
         }
         return InfoSection(title: "CPU & RAM", rows: rows)
     }
 
     static func memorySection() -> InfoSection {
         var rows: [InfoRow] = []
-        rows.append(InfoRow(label: "Physical RAM", value: MemoryDetector.bytes(Int64(ProcessInfo.processInfo.physicalMemory))))
-        rows.append(InfoRow(label: "os_proc_available_memory", value: MemoryDetector.bytes(Int64(os_proc_available_memory()))))
+        rows.append(InfoRow(label: "Physical RAM", value: MemoryDetector.bytes(Int64(ProcessInfo.processInfo.physicalMemory)), tier: .expert))
+        rows.append(InfoRow(label: "os_proc_available_memory", value: MemoryDetector.bytes(Int64(os_proc_available_memory())), tier: .expert))
         if let vs = MemoryDetector.vmStats() {
-            rows.append(InfoRow(label: "Free pages", value: MemoryDetector.bytes(Int64(vs.free))))
-            rows.append(InfoRow(label: "Active", value: MemoryDetector.bytes(Int64(vs.active))))
-            rows.append(InfoRow(label: "Inactive", value: MemoryDetector.bytes(Int64(vs.inactive))))
-            rows.append(InfoRow(label: "Wired", value: MemoryDetector.bytes(Int64(vs.wired))))
-            rows.append(InfoRow(label: "Compressed", value: MemoryDetector.bytes(Int64(vs.compressed))))
+            rows.append(InfoRow(label: "Free pages", value: MemoryDetector.bytes(Int64(vs.free)), tier: .expert))
+            rows.append(InfoRow(label: "Active", value: MemoryDetector.bytes(Int64(vs.active)), tier: .expert))
+            rows.append(InfoRow(label: "Inactive", value: MemoryDetector.bytes(Int64(vs.inactive)), tier: .expert))
+            rows.append(InfoRow(label: "Wired", value: MemoryDetector.bytes(Int64(vs.wired)), tier: .expert))
+            rows.append(InfoRow(label: "Compressed", value: MemoryDetector.bytes(Int64(vs.compressed)), tier: .expert))
         }
         if let vm = MemoryDetector.taskVM() {
-            rows.append(InfoRow(label: "App phys_footprint", value: MemoryDetector.bytes(Int64(vm.footprint))))
-            rows.append(InfoRow(label: "App resident", value: MemoryDetector.bytes(Int64(vm.resident))))
-            rows.append(InfoRow(label: "App virtual", value: MemoryDetector.bytes(Int64(vm.virtual))))
+            rows.append(InfoRow(label: "App phys_footprint", value: MemoryDetector.bytes(Int64(vm.footprint)), tier: .dev))
+            rows.append(InfoRow(label: "App resident", value: MemoryDetector.bytes(Int64(vm.resident)), tier: .dev))
+            rows.append(InfoRow(label: "App virtual", value: MemoryDetector.bytes(Int64(vm.virtual)), tier: .dev))
         }
         let asLim = MemoryDetector.rlimitValue(RLIMIT_AS)
-        rows.append(InfoRow(label: "RLIMIT_AS cur/max", value: "\(MemoryDetector.limitText(asLim.cur)) / \(MemoryDetector.limitText(asLim.max))"))
+        rows.append(InfoRow(label: "RLIMIT_AS cur/max", value: "\(MemoryDetector.limitText(asLim.cur)) / \(MemoryDetector.limitText(asLim.max))", tier: .dev))
         return InfoSection(title: "Memory", rows: rows)
     }
 
@@ -433,33 +445,33 @@ enum DeviceInfo {
         }
         let levelText = level < 0 ? "n/a" : "\(Int(level * 100)) %"
         return InfoSection(title: "Battery", rows: [
-            InfoRow(label: "Level", value: levelText),
-            InfoRow(label: "State", value: stateText)
+            InfoRow(label: "Level", value: levelText, tier: .expert),
+            InfoRow(label: "State", value: stateText, tier: .expert)
         ])
     }
 
     static func screenSection() -> InfoSection {
         let screen = UIScreen.main
         return InfoSection(title: "Screen", rows: [
-            InfoRow(label: "Bounds", value: "\(Int(screen.bounds.width)) x \(Int(screen.bounds.height))"),
-            InfoRow(label: "Scale", value: String(format: "@%.0fx", screen.scale)),
-            InfoRow(label: "Native", value: "\(Int(screen.nativeBounds.width)) x \(Int(screen.nativeBounds.height))"),
-            InfoRow(label: "Max FPS", value: "\(screen.maximumFramesPerSecond)")
+            InfoRow(label: "Bounds", value: "\(Int(screen.bounds.width)) x \(Int(screen.bounds.height))", tier: .expert),
+            InfoRow(label: "Scale", value: String(format: "@%.0fx", screen.scale), tier: .expert),
+            InfoRow(label: "Native", value: "\(Int(screen.nativeBounds.width)) x \(Int(screen.nativeBounds.height))", tier: .expert),
+            InfoRow(label: "Max FPS", value: "\(screen.maximumFramesPerSecond)", tier: .expert)
         ])
     }
 
     static func networkSection(_ status: String) -> InfoSection {
-        InfoSection(title: "Network", rows: [InfoRow(label: "Status", value: status)])
+        InfoSection(title: "Network", rows: [InfoRow(label: "Status", value: status, tier: .expert)])
     }
 
     static func localeSection() -> InfoSection {
         let l = Locale.current
         return InfoSection(title: "Locale", rows: [
-            InfoRow(label: "Locale", value: l.identifier),
-            InfoRow(label: "Region", value: l.regionCode ?? "n/a"),
-            InfoRow(label: "Language", value: Locale.preferredLanguages.first ?? "n/a"),
-            InfoRow(label: "24-hour", value: DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: l)?.contains("H") == true ? "YES" : "NO"),
-            InfoRow(label: "Time zone", value: TimeZone.current.identifier)
+            InfoRow(label: "Locale", value: l.identifier, tier: .expert),
+            InfoRow(label: "Region", value: l.regionCode ?? "n/a", tier: .expert),
+            InfoRow(label: "Language", value: Locale.preferredLanguages.first ?? "n/a", tier: .expert),
+            InfoRow(label: "24-hour", value: DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: l)?.contains("H") == true ? "YES" : "NO", tier: .expert),
+            InfoRow(label: "Time zone", value: TimeZone.current.identifier, tier: .expert)
         ])
     }
 
@@ -470,12 +482,12 @@ enum DeviceInfo {
         let build = info["CFBundleVersion"] as? String ?? "?"
         let name = info["CFBundleName"] as? String ?? bundle.bundleIdentifier ?? "?"
         var rows: [InfoRow] = [
-            InfoRow(label: "Bundle name", value: name),
-            InfoRow(label: "Bundle identifier", value: bundle.bundleIdentifier ?? "n/a"),
-            InfoRow(label: "Version", value: "\(version) (\(build))"),
-            InfoRow(label: "Process ID", value: "\(getpid())"),
-            InfoRow(label: "Parent PID", value: "\(getppid())"),
-            InfoRow(label: "Executable path", value: bundle.executablePath ?? "n/a")
+            InfoRow(label: "Bundle name", value: name, tier: .dev),
+            InfoRow(label: "Bundle identifier", value: bundle.bundleIdentifier ?? "n/a", tier: .dev),
+            InfoRow(label: "Version", value: "\(version) (\(build))", tier: .expert),
+            InfoRow(label: "Process ID", value: "\(getpid())", tier: .dev),
+            InfoRow(label: "Parent PID", value: "\(getppid())", tier: .dev),
+            InfoRow(label: "Executable path", value: bundle.executablePath ?? "n/a", tier: .dev)
         ]
         let requested: [(String, String)] = [
             ("com.apple.security.cs.allow-jit", "allow-jit"),
@@ -485,7 +497,7 @@ enum DeviceInfo {
         ]
         for (key, short) in requested {
             let present = JITDetector.entitlementBool(key)
-            rows.append(InfoRow(label: "Entitlement \(short)", value: present ? "present" : "absent"))
+            rows.append(InfoRow(label: "Entitlement \(short)", value: present ? "present" : "absent", tier: .dev))
         }
         return InfoSection(title: "App", rows: rows)
     }
@@ -519,6 +531,7 @@ enum NetworkStatus {
 
 @MainActor
 final class DiagnosticsModel: ObservableObject {
+    @Published var mode: AppMode = .normal
     @Published var jitEnabled = false
     @Published var jitPoints: [InfoRow] = []
     @Published var jitReasons: [String] = []
@@ -530,6 +543,21 @@ final class DiagnosticsModel: ObservableObject {
     @Published var lastUpdated = Date()
 
     private var monitor: NWPathMonitor?
+
+    var visibleJITPoints: [InfoRow] {
+        jitPoints.filter { mode.includes($0.tier) }
+    }
+
+    var visibleMemoryPoints: [InfoRow] {
+        memoryPoints.filter { mode.includes($0.tier) }
+    }
+
+    var visibleSections: [InfoSection] {
+        sections.compactMap { section in
+            let rows = section.rows.filter { mode.includes($0.tier) }
+            return rows.isEmpty ? nil : InfoSection(title: section.title, rows: rows)
+        }
+    }
 
     init() {
         UIDevice.current.isBatteryMonitoringEnabled = true

@@ -6,6 +6,15 @@ und die beiden wichtigsten Sideloading-Werte:
 - **JIT** (On/Off)
 - **Extended Memory** (On/Off)
 
+Die App hat **drei Modi** (oben umschaltbar):
+
+- **Normal** – nur die Infos, die ein Sideloader wirklich braucht: JIT-/Extended-Memory-Status
+  inkl. Grund, Gerätename/-modell, iOS-Version und freier Speicherplatz.
+- **Experte** – deutlich erweitert: zusätzlich alle JIT-/Memory-Checks (Flags),
+  CPU/RAM, Akku, Display, Netzwerk, Locale und App-Version.
+- **Dev** – alles, für Entwickler: zusätzlich Kernel-Build, SoC/Board, CPU-Frequenz,
+  RLIMIT-Werte, VM-Statistiken, PID/PPID, Executable-Pfad und Entitlement-Präsenz.
+
 ## Was die App erkennt
 
 ### JIT
@@ -15,8 +24,6 @@ und die beiden wichtigsten Sideloading-Werte:
 - Entitlement `dynamic-codesigning`
 - Sysctl `kern.jit_entitled`
 - Jailbreak-Hinweise (writable Systempfade)
-- **Laufzeit-Probe**: `mmap` RW-Seite → `mprotect(PROT_EXEC)` → Ausführung einer
-  `RET`-Instruktion. Wenn das fault/trapped → JIT blockiert, wenn es läuft → JIT aktiv.
 
 ### Extended Memory
 - Entitlement `com.apple.developer.kernel.increased-memory-limit`
@@ -59,4 +66,4 @@ deiner Apple-ID. Geeignet: AltStore, Sideloadly, SideStore, TrollStore (permanen
 Seit iOS 18.4 akzeptiert der Kernel JIT über Debugger nur noch, wenn der Debugger
 das Entitlement `com.apple.private.cs.debugger` hat (nur Xcode). Ohne TrollStore 3
 oder Jailbreak ist JIT außerhalb von Xcode dort nicht mehr aktivierbar – die App
-zeigt das dann als `OFF` mit „mprotect rejected“ an.
+zeigt das dann als `OFF` ohne positive JIT-Quelle an.
