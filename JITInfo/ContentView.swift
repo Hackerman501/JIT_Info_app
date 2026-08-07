@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject private var l10n: LanguageManager
     @AppStorage("appearance") private var appearance = AppAppearance.system
     @State private var showShare = false
+    @State private var infoRow: InfoRow?
 
     var body: some View {
         NavigationView {
@@ -116,13 +117,13 @@ struct ContentView: View {
 
                 if !model.visibleJITPoints.isEmpty {
                     Section(l10n.localize("status.jitChecks")) {
-                        ForEach(model.visibleJITPoints) { InfoRowView(row: $0) }
+                        ForEach(model.visibleJITPoints) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
                     }
                 }
 
                 if !model.visibleMemoryPoints.isEmpty {
                     Section(l10n.localize("status.memoryChecks")) {
-                        ForEach(model.visibleMemoryPoints) { InfoRowView(row: $0) }
+                        ForEach(model.visibleMemoryPoints) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
                     }
                 }
 
@@ -154,7 +155,7 @@ struct ContentView: View {
 
                 ForEach(model.visibleSections) { section in
                     Section(header: Text(section.title)) {
-                        ForEach(section.rows) { InfoRowView(row: $0) }
+                        ForEach(section.rows) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
                     }
                 }
             }
@@ -187,6 +188,13 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showShare) {
                 ActivityView(items: [model.reportText()])
+            }
+            .alert(item: $infoRow) { row in
+                Alert(
+                    title: Text(row.label),
+                    message: Text(FlagInfo.explanation(for: row.label) ?? ""),
+                    dismissButton: .default(Text("OK"))
+                )
             }
         }
         .preferredColorScheme(appearance.colorScheme)
@@ -233,7 +241,7 @@ struct StatusCard: View {
 
 struct InfoRowView: View {
     let row: InfoRow
-    @State private var showInfo = false
+    let onInfo: () -> Void
 
     var body: some View {
         HStack(alignment: .top) {
@@ -244,20 +252,13 @@ struct InfoRowView: View {
             Text(row.value)
                 .multilineTextAlignment(.trailing)
             if FlagInfo.explanation(for: row.label) != nil {
-                Button {
-                    showInfo = true
-                } label: {
+                Button(action: onInfo) {
                     Image(systemName: "info.circle")
                         .font(.footnote)
                         .foregroundColor(.accentColor)
                 }
                 .buttonStyle(.borderless)
                 .padding(.leading, 6)
-                .alert("\(row.label)", isPresented: $showInfo) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text(FlagInfo.explanation(for: row.label) ?? "")
-                }
             }
         }
         .font(.callout)
