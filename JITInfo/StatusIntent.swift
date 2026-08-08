@@ -14,7 +14,7 @@ struct GetStatusIntent: AppIntent {
         if let reason = jit.summary.first {
             text += "\n\(reason)"
         }
-        return .result(dialog: text)
+        return .result(dialog: IntentDialog(text))
     }
 }
 
