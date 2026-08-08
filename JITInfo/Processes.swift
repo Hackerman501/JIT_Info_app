@@ -48,6 +48,12 @@ private func proc_pidinfo(_ pid: Int32,
                           _ buffer: UnsafeMutableRawPointer?,
                           _ bufferSize: Int32) -> Int32
 
+@_silgen_name("proc_listallpids")
+private func proc_listallpids(_ buffer: UnsafeMutableRawPointer?, _ buffersize: Int32) -> Int32
+
+@_silgen_name("proc_name")
+private func proc_name(_ pid: Int32, _ buffer: UnsafeMutableRawPointer?, _ buffersize: UInt32) -> Int32
+
 private func taskInfo(pid: pid_t) -> ProcTaskInfo? {
     var info = ProcTaskInfo()
     let size = Int32(MemoryLayout<ProcTaskInfo>.stride)
@@ -72,13 +78,17 @@ enum ProcessManager {
     private static var lastSnapshots: [pid_t: Snapshot] = [:]
 
     static func list() -> [ProcessEntry] {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
-        var size = 0
-        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        // KERN_PROC_ALL via sysctl returns nothing from the iOS sandbox
+        // (even for normally sideloaded apps), so enumerate PIDs through
+        // libproc's proc_listallpids instead.
+        let pidCount = Int(proc_listallpids(nil, 0))
+        guard pidCount > 0, pidCount < 8192 else { return [] }
+        var pids = [pid_t](repeating: 0, count: pidCount)
+        let written = Int(proc_listallpids(&pids, Int32(MemoryLayout<pid_t>.size * pids.count)))
+        guard written > 0 else { return [] }
 
-        let count = size / MemoryLayout<kinfo_proc>.stride
-        var procs = [kinfo_proc](repeating: kinfo_proc(), count: count)
-        guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else { return [] }
+        // Best-effort process states; stays empty inside the sandbox.
+        let stateMap = processStateMap()
 
         let now = Date().timeIntervalSince1970
         let selfPID = getpid()
@@ -86,10 +96,9 @@ enum ProcessManager {
         var entries: [ProcessEntry] = []
         var current: [pid_t: Snapshot] = [:]
 
-        for p in procs where p.kp_proc.p_pid > 0 {
-            let pid = p.kp_proc.p_pid
-            let name = commString(p.kp_proc.p_comm)
-            let state = stateString(p.kp_proc.p_stat)
+        for pid in pids.prefix(min(written, pids.count)) where pid > 0 {
+            let name = processName(pid)
+            let state = stateMap[pid].map(stateString) ?? LanguageManager.shared.localize("processes.state.unknown")
 
             let info = taskInfo(pid: pid)
             let user = info?.totalUser ?? 0
@@ -133,11 +142,25 @@ enum ProcessManager {
 
     // MARK: helpers
 
-    private static func commString<T>(_ comm: T) -> String {
-        withUnsafeBytes(of: comm) { raw in
-            guard let base = raw.baseAddress else { return "" }
-            return String(cString: base.assumingMemoryBound(to: CChar.self))
+    private static func processStateMap() -> [pid_t: CChar] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [:] }
+        let count = size / MemoryLayout<kinfo_proc>.stride
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: count)
+        guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else { return [:] }
+        var map: [pid_t: CChar] = [:]
+        for p in procs where p.kp_proc.p_pid > 0 {
+            map[p.kp_proc.p_pid] = p.kp_proc.p_stat
         }
+        return map
+    }
+
+    private static func processName(_ pid: pid_t) -> String {
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        let len = proc_name(pid, &buffer, UInt32(buffer.count))
+        guard len > 0 else { return "" }
+        return String(cString: buffer)
     }
 
     private static func stateString(_ stat: CChar) -> String {

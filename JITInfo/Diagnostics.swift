@@ -956,23 +956,42 @@ final class DiagnosticsModel: ObservableObject {
             if let first = jitReasons.first { lines.append(l10n.localize("rec.reason", first)) }
             return lines
         }
+
         let jailbroken = !JITDetector.jailbrokenHints().isEmpty
         let parts = UIDevice.current.systemVersion.split(separator: ".")
         let major = parts.first.flatMap { Int($0) } ?? 0
         let minor = parts.dropFirst().first.flatMap { Int($0) } ?? 0
-        if major > 18 || (major == 18 && minor >= 4) {
-            if jailbroken {
-                return [l10n.localize("rec.ios184Jb1"),
-                        l10n.localize("rec.ios184Jb2")]
-            }
-            return [l10n.localize("rec.ios184NoJb1"),
-                    l10n.localize("rec.ios184NoJb2")]
-        }
+
+        var lines: [String] = []
         if jailbroken {
-            return [l10n.localize("rec.jb1")]
+            lines.append(l10n.localize("rec.jbGeneral"))
         }
-        return [l10n.localize("rec.noJb1"),
-                l10n.localize("rec.noJb2")]
+
+        if major >= 27 {
+            lines.append(l10n.localize("rec.v27"))
+        } else if major == 26 {
+            lines.append(l10n.localize("rec.v26"))
+        } else if major == 18 {
+            lines.append(l10n.localize(minor >= 4 ? "rec.v184" : "rec.v18"))
+        } else if major == 17 {
+            if minor == 0 {
+                lines.append(l10n.localize("rec.v170"))
+            } else if minor <= 3 {
+                lines.append(l10n.localize("rec.v173"))
+            } else {
+                lines.append(l10n.localize("rec.v174"))
+            }
+        } else if major == 16 {
+            lines.append(l10n.localize("rec.v16"))
+        } else if major == 15 {
+            lines.append(l10n.localize("rec.v15"))
+        }
+
+        lines.append(l10n.localize("rec.tipGetTaskAllow"))
+        if !jailbroken {
+            lines.append(l10n.localize("rec.xcode"))
+        }
+        return lines
     }
 
     private func appendLog(entry: JITLogEntry) {
