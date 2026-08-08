@@ -143,7 +143,7 @@ struct StatusTab: View {
                     StatusCard(title: "JIT",
                                enabled: model.jitEnabled,
                                details: model.jitReasons)
-                    StatusCard(title: "Extended Memory",
+                    StatusCard(title: l10n.localize("status.card.extendedMemory"),
                                enabled: model.extendedMemory,
                                details: model.memoryReasons)
                 }
@@ -231,6 +231,7 @@ struct DetailsTab: View {
     @Binding var infoRow: InfoRow?
     @EnvironmentObject private var l10n: LanguageManager
     @State private var exportText: ExportText?
+    @State private var confirmClear = false
 
     var body: some View {
         List {
@@ -259,6 +260,11 @@ struct DetailsTab: View {
                         HStack {
                             Spacer()
                             Menu {
+                                Button(role: .destructive) {
+                                    confirmClear = true
+                                } label: {
+                                    Label(l10n.localize("history.clear"), systemImage: "trash")
+                                }
                                 Button {
                                     exportText = ExportText(model.historyCSV())
                                 } label: {
@@ -279,6 +285,12 @@ struct DetailsTab: View {
                     Text(l10n.localize("history.title"))
                         .font(.callout)
                         .foregroundColor(.primary)
+                }
+                .confirmationDialog(l10n.localize("history.clearConfirm"), isPresented: $confirmClear, titleVisibility: .visible) {
+                    Button(l10n.localize("history.clear"), role: .destructive) {
+                        model.clearHistory()
+                    }
+                    Button(l10n.localize("common.cancel"), role: .cancel) {}
                 }
             }
 
@@ -868,6 +880,22 @@ struct CompatRow: View {
     let app: CompatApp
     @EnvironmentObject private var l10n: LanguageManager
 
+    private var symbol: String {
+        switch app.jitNeed {
+        case .yes: return "bolt.fill"
+        case .no: return "checkmark.circle"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+
+    private var symbolColor: Color {
+        switch app.jitNeed {
+        case .yes: return .orange
+        case .no: return .green
+        case .unknown: return .gray
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
@@ -880,18 +908,22 @@ struct CompatRow: View {
                     .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                     .foregroundColor(.accentColor)
                 Spacer()
-                Image(systemName: app.needsJIT ? "bolt.fill" : "checkmark.circle")
+                Image(systemName: symbol)
                     .font(.footnote)
-                    .foregroundColor(app.needsJIT ? .orange : .green)
+                    .foregroundColor(symbolColor)
             }
             HStack(spacing: 6) {
                 Text(l10n.localize("compat.ios", app.iosRange))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                if app.needsJIT {
+                if app.jitNeed == .yes {
                     Text(l10n.localize("compat.needsJit"))
                         .font(.caption)
                         .foregroundColor(.orange)
+                } else if app.jitNeed == .unknown {
+                    Text(l10n.localize("compat.jitUnknown"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             if let note = app.note {

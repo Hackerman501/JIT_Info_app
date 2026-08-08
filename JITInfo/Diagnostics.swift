@@ -833,13 +833,17 @@ enum DeviceInfo {
 
 // MARK: - Compatibility database
 
+enum JITNeed {
+    case yes, no, unknown
+}
+
 struct CompatApp: Identifiable {
     let id: String
     let name: String
     let categoryKey: String
     let minIOS: String
     let maxIOS: String?
-    let needsJIT: Bool
+    let jitNeed: JITNeed
     let noteKey: String?
     let url: String?
 
@@ -856,60 +860,60 @@ enum CompatDatabase {
     static let apps: [CompatApp] = [
         CompatApp(id: "utm", name: "UTM",
                   categoryKey: "compat.category.emulator", minIOS: "14.0", maxIOS: nil,
-                  needsJIT: true, noteKey: "compat.note.utm",
+                  jitNeed: .yes, noteKey: "compat.note.utm",
                   url: "https://getutm.app"),
         CompatApp(id: "dolphin", name: "DolphiniOS",
                   categoryKey: "compat.category.emulator", minIOS: "13.0", maxIOS: "26.6",
-                  needsJIT: true, noteKey: "compat.note.dolphin", url: nil),
+                  jitNeed: .yes, noteKey: "compat.note.dolphin", url: nil),
         CompatApp(id: "amethyst", name: "Amethyst",
                   categoryKey: "compat.category.emulator", minIOS: "14.0", maxIOS: nil,
-                  needsJIT: true, noteKey: nil, url: nil),
+                  jitNeed: .unknown, noteKey: nil, url: nil),
         CompatApp(id: "melonx", name: "MeloNX",
                   categoryKey: "compat.category.emulator", minIOS: "17.0", maxIOS: nil,
-                  needsJIT: true, noteKey: nil, url: nil),
+                  jitNeed: .unknown, noteKey: nil, url: nil),
         CompatApp(id: "maci", name: "maciOS",
                   categoryKey: "compat.category.emulator", minIOS: "17.0", maxIOS: nil,
-                  needsJIT: true, noteKey: "compat.note.macios", url: nil),
+                  jitNeed: .yes, noteKey: "compat.note.macios", url: nil),
         CompatApp(id: "geode", name: "Geode",
                   categoryKey: "compat.category.emulator", minIOS: "17.0", maxIOS: nil,
-                  needsJIT: true, noteKey: nil, url: nil),
+                  jitNeed: .unknown, noteKey: nil, url: nil),
         CompatApp(id: "manic", name: "Manic EMU",
                   categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
-                  needsJIT: true, noteKey: nil, url: nil),
+                  jitNeed: .unknown, noteKey: nil, url: nil),
         CompatApp(id: "flycast", name: "Flycast",
                   categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
-                  needsJIT: true, noteKey: "compat.note.flycast", url: nil),
+                  jitNeed: .yes, noteKey: "compat.note.flycast", url: nil),
         CompatApp(id: "melocafe", name: "MeloCafe",
                   categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
-                  needsJIT: true, noteKey: nil, url: nil),
+                  jitNeed: .unknown, noteKey: nil, url: nil),
         CompatApp(id: "armsx2", name: "ARMSX2",
                   categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
-                  needsJIT: true, noteKey: nil, url: nil),
+                  jitNeed: .unknown, noteKey: nil, url: nil),
         CompatApp(id: "dukex", name: "DukeX",
                   categoryKey: "compat.category.emulator", minIOS: "14.0", maxIOS: "27",
-                  needsJIT: true, noteKey: "compat.note.dukex", url: nil),
+                  jitNeed: .yes, noteKey: "compat.note.dukex", url: nil),
         CompatApp(id: "ppsspp", name: "PPSSPP",
                   categoryKey: "compat.category.emulator", minIOS: "11.0", maxIOS: nil,
-                  needsJIT: false, noteKey: "compat.note.ppsspp", url: nil),
+                  jitNeed: .no, noteKey: "compat.note.ppsspp", url: nil),
         CompatApp(id: "delta", name: "Delta",
                   categoryKey: "compat.category.emulator", minIOS: "12.0", maxIOS: nil,
-                  needsJIT: false, noteKey: nil, url: nil),
+                  jitNeed: .no, noteKey: nil, url: nil),
         CompatApp(id: "provenance", name: "Provenance",
                   categoryKey: "compat.category.emulator", minIOS: "12.0", maxIOS: nil,
-                  needsJIT: false, noteKey: nil, url: nil),
+                  jitNeed: .no, noteKey: nil, url: nil),
         CompatApp(id: "idos", name: "iDOS",
                   categoryKey: "compat.category.emulator", minIOS: "11.0", maxIOS: nil,
-                  needsJIT: false, noteKey: nil, url: nil),
+                  jitNeed: .no, noteKey: nil, url: nil),
         CompatApp(id: "sidestore", name: "SideStore",
                   categoryKey: "compat.category.tool", minIOS: "16.0", maxIOS: nil,
-                  needsJIT: false, noteKey: "compat.note.sidestore",
+                  jitNeed: .no, noteKey: "compat.note.sidestore",
                   url: "https://sidestore.io"),
         CompatApp(id: "stikdebug", name: "StikDebug",
                   categoryKey: "compat.category.tool", minIOS: "17.4", maxIOS: nil,
-                  needsJIT: false, noteKey: "compat.note.stikdebug", url: nil),
+                  jitNeed: .no, noteKey: "compat.note.stikdebug", url: nil),
         CompatApp(id: "trollstore", name: "TrollStore",
                   categoryKey: "compat.category.tool", minIOS: "14.0", maxIOS: "17.0",
-                  needsJIT: false, noteKey: "compat.note.trollstore", url: nil)
+                  jitNeed: .no, noteKey: "compat.note.trollstore", url: nil)
     ]
 }
 
@@ -1121,7 +1125,7 @@ final class DiagnosticsModel: ObservableObject {
             if !visible.isEmpty {
                 lines.append("## \(section.title)")
                 for row in visible {
-                    lines.append("\(row.label): \(row.value)")
+                    lines.append("\(l10n.localize(row.label)): \(row.value)")
                 }
                 lines.append("")
             }
@@ -1130,7 +1134,7 @@ final class DiagnosticsModel: ObservableObject {
                 guard !gVisible.isEmpty else { continue }
                 lines.append("### \(group.title)")
                 for row in gVisible {
-                    lines.append("\(row.label): \(row.value)")
+                    lines.append("\(l10n.localize(row.label)): \(row.value)")
                 }
                 lines.append("")
             }
@@ -1165,12 +1169,12 @@ final class DiagnosticsModel: ObservableObject {
         for section in sections {
             let visible = section.rows.filter { mode.includes($0.tier) }
             if !visible.isEmpty {
-                sectionsDict[section.titleKey] = visible.map { ["label": $0.label, "value": $0.value] }
+                sectionsDict[section.titleKey] = visible.map { ["label": l10n.localize($0.label), "value": $0.value] }
             }
             for group in section.groups {
                 let gVisible = group.rows.filter { mode.includes($0.tier) }
                 if !gVisible.isEmpty {
-                    sectionsDict["\(section.titleKey).\(group.titleKey)"] = gVisible.map { ["label": $0.label, "value": $0.value] }
+                    sectionsDict["\(section.titleKey).\(group.titleKey)"] = gVisible.map { ["label": l10n.localize($0.label), "value": $0.value] }
                 }
             }
         }
@@ -1293,6 +1297,13 @@ final class DiagnosticsModel: ObservableObject {
             lines.append(l10n.localize("rec.xcode"))
         }
         return lines
+    }
+
+    func clearHistory() {
+        jitLog.removeAll()
+        if let data = try? JSONEncoder().encode(jitLog) {
+            UserDefaults.standard.set(data, forKey: Keys.log)
+        }
     }
 
     private func appendLog(entry: JITLogEntry) {
