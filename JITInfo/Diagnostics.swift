@@ -6,7 +6,6 @@ import Darwin
 import os
 import Network
 import MachO
-import UserNotifications
 
 // MARK: - Modes
 
@@ -952,13 +951,6 @@ final class DiagnosticsModel: ObservableObject {
     @Published var refreshInterval: TimeInterval = 2.0 {
         didSet { UserDefaults.standard.set(refreshInterval, forKey: Keys.refresh) }
     }
-    @Published var notifyOnChange = false {
-        didSet {
-            UserDefaults.standard.set(notifyOnChange, forKey: Keys.notify)
-            if notifyOnChange { requestNotificationAuthorization() }
-        }
-    }
-    @Published var notificationsGranted = false
     @Published var jitEnabled = false
     @Published var jitPoints: [InfoRow] = []
     @Published var jitReasons: [String] = []
@@ -986,7 +978,6 @@ final class DiagnosticsModel: ObservableObject {
     private enum Keys {
         static let mode = "appMode"
         static let refresh = "refreshInterval"
-        static let notify = "notifyOnChange"
         static let log = "jitLog"
     }
 
@@ -1019,7 +1010,6 @@ final class DiagnosticsModel: ObservableObject {
         if let m = AppMode(rawValue: UserDefaults.standard.integer(forKey: Keys.mode)) { mode = m }
         let r = UserDefaults.standard.double(forKey: Keys.refresh)
         if r > 0 { refreshInterval = r }
-        notifyOnChange = UserDefaults.standard.bool(forKey: Keys.notify)
         loadLog()
         lastJIT = jitLog.first?.jitOn
     }
@@ -1047,13 +1037,6 @@ final class DiagnosticsModel: ObservableObject {
             appendLog(entry: JITLogEntry(id: UUID(), date: Date(), jitOn: jit.enabled,
                                          reason: jit.summary.first ?? l10n.localize("notif.logChanged")))
             haptic.notificationOccurred(jit.enabled ? .success : .error)
-            if notifyOnChange && notificationsGranted {
-                let content = UNMutableNotificationContent()
-                content.title = l10n.localize(jit.enabled ? "notif.jitOn" : "notif.jitOff")
-                content.body = jit.summary.first ?? l10n.localize("notif.jitChanged")
-                let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-                UNUserNotificationCenter.current().add(request)
-            }
         } else if lastJIT == nil {
             appendLog(entry: JITLogEntry(id: UUID(), date: Date(), jitOn: jit.enabled,
                                          reason: jit.summary.first ?? l10n.localize("notif.logInitial")))
@@ -1318,13 +1301,5 @@ final class DiagnosticsModel: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: Keys.log),
               let entries = try? JSONDecoder().decode([JITLogEntry].self, from: data) else { return }
         jitLog = entries
-    }
-
-    private func requestNotificationAuthorization() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            Task { @MainActor in
-                self.notificationsGranted = granted
-            }
-        }
     }
 }

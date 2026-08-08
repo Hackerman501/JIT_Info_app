@@ -145,9 +145,6 @@ private let enStrings: [String: String] = [
     "settings.appearance.light": "Light",
     "settings.appearance.dark": "Dark",
     "settings.updateInterval": "Update interval",
-    "settings.notify": "Notify on JIT change",
-    "settings.notificationsActive": "Notifications active \u{2013} you will be notified on every JIT change.",
-    "settings.notificationsDenied": "Please allow notifications in iOS Settings.",
 
     "status.title": "Status",
     "status.updated": "Updated",
@@ -196,9 +193,6 @@ private let enStrings: [String: String] = [
     "rec.tipGetTaskAllow": "Your sideloaded app must include the get-task-allow entitlement, otherwise JIT tools cannot attach.",
     "rec.xcode": "Universal: Launch the app from Xcode on a Mac (get-task-allow) and attach the debugger \u{2013} enables JIT without a jailbreak.",
 
-    "notif.jitOn": "JIT enabled",
-    "notif.jitOff": "JIT disabled",
-    "notif.jitChanged": "JIT status has changed",
     "notif.logChanged": "Status changed",
     "notif.logInitial": "Initial status",
 
@@ -339,9 +333,6 @@ private let deStrings: [String: String] = [
     "settings.appearance.light": "Hell",
     "settings.appearance.dark": "Dunkel",
     "settings.updateInterval": "Update-Intervall",
-    "settings.notify": "Bei JIT-Wechsel benachrichtigen",
-    "settings.notificationsActive": "Benachrichtigungen aktiv \u{2013} du wirst bei jedem JIT-Wechsel informiert.",
-    "settings.notificationsDenied": "Bitte erlaube Benachrichtigungen in den iOS-Einstellungen.",
 
     "status.title": "Status",
     "status.updated": "Aktualisiert",
@@ -390,9 +381,6 @@ private let deStrings: [String: String] = [
     "rec.tipGetTaskAllow": "Die sideloaded App muss die get-task-allow-Berechtigung enthalten, sonst k\u{00F6}nnen JIT-Tools nicht andocken.",
     "rec.xcode": "Universell: App am Mac aus Xcode starten (get-task-allow) und Debugger anh\u{00E4}ngen \u{2013} aktiviert JIT ohne Jailbreak.",
 
-    "notif.jitOn": "JIT aktiviert",
-    "notif.jitOff": "JIT deaktiviert",
-    "notif.jitChanged": "JIT-Status hat sich ge\u{00E4}ndert",
     "notif.logChanged": "Status gewechselt",
     "notif.logInitial": "Initialstatus",
 

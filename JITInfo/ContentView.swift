@@ -577,15 +577,8 @@ struct SettingsTab: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                 }
-                Toggle(l10n.localize("settings.notify"), isOn: $model.notifyOnChange)
             } header: {
                 Text(l10n.localize("settings.title"))
-            } footer: {
-                if model.notifyOnChange {
-                    Text(model.notificationsGranted
-                         ? l10n.localize("settings.notificationsActive")
-                         : l10n.localize("settings.notificationsDenied"))
-                }
             }
         }
     }
