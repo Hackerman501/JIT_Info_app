@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Charts
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var model = DiagnosticsModel()
@@ -9,6 +10,8 @@ struct ContentView: View {
     @State private var infoRow: InfoRow?
     @State private var shareItem: ShareItem?
     @State private var selectedTab: AppTab = .status
+    @State private var exporting = false
+    @State private var exportDocument: ReportDocument?
 
     var body: some View {
         NavigationView {
@@ -46,7 +49,13 @@ struct ContentView: View {
             .navigationTitle(l10n.localize("app.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        model.refreshAll()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel(l10n.localize("action.refresh"))
                     Menu {
                         Button {
                             shareItem = ShareItem(text: model.reportText())
@@ -58,6 +67,17 @@ struct ContentView: View {
                         } label: {
                             Label(l10n.localize("report.format.json"), systemImage: "curlybraces")
                         }
+                        Divider()
+                        Button {
+                            prepareExport(.markdown)
+                        } label: {
+                            Label(l10n.localize("report.saveMarkdown"), systemImage: "square.and.arrow.down")
+                        }
+                        Button {
+                            prepareExport(.json)
+                        } label: {
+                            Label(l10n.localize("report.saveJson"), systemImage: "square.and.arrow.down")
+                        }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
@@ -65,6 +85,7 @@ struct ContentView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
         .preferredColorScheme(appearance.colorScheme)
         .task {
             model.start()
@@ -81,6 +102,12 @@ struct ContentView: View {
         .sheet(item: $shareItem) { item in
             ActivityView(items: [item.text])
         }
+        .fileExporter(isPresented: $exporting,
+                      document: exportDocument,
+                      contentType: .plainText,
+                      defaultFilename: exportDocument?.filename ?? "JITInfoReport") { _ in
+            exportDocument = nil
+        }
         .alert(item: $infoRow) { row in
             Alert(
                 title: Text(row.label),
@@ -88,6 +115,46 @@ struct ContentView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+    }
+
+    private enum ExportFormat {
+        case markdown, json
+    }
+
+    private func prepareExport(_ format: ExportFormat) {
+        let stamp = model.exportTimestamp()
+        switch format {
+        case .markdown:
+            exportDocument = ReportDocument(model.reportText(), filename: "JITInfo-Report-\(stamp).md")
+        case .json:
+            exportDocument = ReportDocument(model.reportJSON(), filename: "JITInfo-Report-\(stamp).json")
+        }
+        exporting = true
+    }
+}
+
+struct ReportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.plainText, .json] }
+
+    var text: String
+    var filename: String
+
+    init(_ text: String, filename: String) {
+        self.text = text
+        self.filename = filename
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        if let data = configuration.file.regularFileContents {
+            text = String(decoding: data, as: UTF8.self)
+        } else {
+            text = ""
+        }
+        filename = "JITInfoReport"
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }
 
@@ -107,6 +174,7 @@ struct StatusTab: View {
     @ObservedObject var model: DiagnosticsModel
     @Binding var infoRow: InfoRow?
     @EnvironmentObject private var l10n: LanguageManager
+    @State private var shareItem: ShareItem?
 
     var body: some View {
         List {
@@ -153,6 +221,12 @@ struct StatusTab: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
+                Button {
+                    model.refreshAll()
+                } label: {
+                    Label(l10n.localize("action.recheck"), systemImage: "arrow.clockwise")
+                }
+                .font(.callout)
             }
 
             Section(l10n.localize("status.battery")) {
@@ -199,7 +273,11 @@ struct StatusTab: View {
             if !model.visibleJITPoints.isEmpty {
                 Section {
                     DisclosureGroup {
-                        ForEach(model.visibleJITPoints) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
+                        ForEach(model.visibleJITPoints) { row in
+                            InfoRowView(row: row,
+                                        onInfo: { infoRow = row },
+                                        onShare: { shareItem = ShareItem(text: $0) })
+                        }
                     } label: {
                         Text(l10n.localize("status.jitChecks"))
                             .font(.callout)
@@ -211,7 +289,11 @@ struct StatusTab: View {
             if !model.visibleMemoryPoints.isEmpty {
                 Section {
                     DisclosureGroup {
-                        ForEach(model.visibleMemoryPoints) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
+                        ForEach(model.visibleMemoryPoints) { row in
+                            InfoRowView(row: row,
+                                        onInfo: { infoRow = row },
+                                        onShare: { shareItem = ShareItem(text: $0) })
+                        }
                     } label: {
                         Text(l10n.localize("status.memoryChecks"))
                             .font(.callout)
@@ -220,8 +302,12 @@ struct StatusTab: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .refreshable {
             model.refreshAll()
+        }
+        .sheet(item: $shareItem) { item in
+            ActivityView(items: [item.text])
         }
     }
 }
@@ -232,6 +318,32 @@ struct DetailsTab: View {
     @EnvironmentObject private var l10n: LanguageManager
     @State private var exportText: ExportText?
     @State private var confirmClear = false
+    @State private var searchText = ""
+    @State private var historyDays: Int?
+    @State private var exporting = false
+    @State private var exportDocument: ReportDocument?
+
+    private var filteredSections: [InfoSection] {
+        guard !searchText.isEmpty else { return model.visibleSections }
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return model.visibleSections.compactMap { section in
+            let rows = section.rows.filter { rowMatches($0, q) }
+            let groups = section.groups.compactMap { group -> InfoSection? in
+                let gRows = group.rows.filter { rowMatches($0, q) }
+                return gRows.isEmpty ? nil : InfoSection(titleKey: group.titleKey, rows: gRows)
+            }
+            if rows.isEmpty && groups.isEmpty { return nil }
+            return InfoSection(titleKey: section.titleKey, rows: rows, groups: groups)
+        }
+    }
+
+    private func rowMatches(_ row: InfoRow, _ q: String) -> Bool {
+        l10n.localize(row.label).lowercased().contains(q) || row.value.lowercased().contains(q)
+    }
+
+    private var visibleHistory: [JITLogEntry] {
+        model.filteredLog(days: historyDays)
+    }
 
     var body: some View {
         List {
@@ -242,9 +354,17 @@ struct DetailsTab: View {
                             .font(.callout)
                             .foregroundColor(.secondary)
                     } else {
-                        ForEach(model.jitLog) { entry in
+                        Picker(l10n.localize("history.range"), selection: $historyDays) {
+                            Text(l10n.localize("history.range.all")).tag(Int?.none)
+                            Text(l10n.localize("history.range.today")).tag(Int?.some(1))
+                            Text(l10n.localize("history.range.week")).tag(Int?.some(7))
+                            Text(l10n.localize("history.range.month")).tag(Int?.some(30))
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        ForEach(visibleHistory) { entry in
                             HStack(alignment: .top) {
-                                Text(entry.date, format: .dateTime.hour().minute().second())
+                                Text(entry.date, format: .dateTime.day().month().hour().minute().second())
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                 Text(entry.jitOn ? l10n.localize("status.on") : l10n.localize("status.off"))
@@ -266,14 +386,22 @@ struct DetailsTab: View {
                                     Label(l10n.localize("history.clear"), systemImage: "trash")
                                 }
                                 Button {
-                                    exportText = ExportText(model.historyCSV())
+                                    exportText = ExportText(model.historyCSV(within: historyDays))
                                 } label: {
                                     Label(l10n.localize("history.export.csv"), systemImage: "tablecells")
                                 }
                                 Button {
-                                    exportText = ExportText(model.historyJSON())
+                                    exportText = ExportText(model.historyJSON(within: historyDays))
                                 } label: {
                                     Label(l10n.localize("history.export.json"), systemImage: "curlybraces")
+                                }
+                                Divider()
+                                Button {
+                                    exportDocument = ReportDocument(model.historyCSV(within: historyDays),
+                                                                    filename: "JITInfo-History-\(model.exportTimestamp()).csv")
+                                    exporting = true
+                                } label: {
+                                    Label(l10n.localize("history.save"), systemImage: "square.and.arrow.down")
                                 }
                             } label: {
                                 Label(l10n.localize("history.export"), systemImage: "square.and.arrow.up")
@@ -296,17 +424,27 @@ struct DetailsTab: View {
 
             CompatSection()
 
-            ForEach(model.visibleSections) { section in
+            ForEach(filteredSections) { section in
                 CollapsibleSection(section: section) { row in
                     infoRow = row
+                } onShare: { text in
+                    exportText = ExportText(text)
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: l10n.localize("details.search"))
         .refreshable {
             model.refreshAll()
         }
         .sheet(item: $exportText) { item in
             ActivityView(items: [item.text])
+        }
+        .fileExporter(isPresented: $exporting,
+                      document: exportDocument,
+                      contentType: .plainText,
+                      defaultFilename: exportDocument?.filename ?? "JITInfo-History") { _ in
+            exportDocument = nil
         }
     }
 }
@@ -320,29 +458,68 @@ private struct ExportText: Identifiable {
     }
 }
 
+enum ProcessSort: Int, CaseIterable, Identifiable {
+    case cpu
+    case memory
+    case name
+    case pid
+
+    var id: Int { rawValue }
+}
+
 struct ProcessesTab: View {
     @ObservedObject var model: DiagnosticsModel
     @EnvironmentObject private var l10n: LanguageManager
     @State private var pendingTerminate: ProcessEntry?
+    @State private var sortOrder: ProcessSort = .cpu
+
+    private var sorted: [ProcessEntry] {
+        let list = model.processes
+        switch sortOrder {
+        case .cpu:
+            return list.sorted {
+                if $0.cpuPercent != $1.cpuPercent { return $0.cpuPercent > $1.cpuPercent }
+                return $0.memoryBytes > $1.memoryBytes
+            }
+        case .memory:
+            return list.sorted { $0.memoryBytes > $1.memoryBytes }
+        case .name:
+            return list.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .pid:
+            return list.sorted { $0.pid < $1.pid }
+        }
+    }
 
     var body: some View {
         List {
             Section {
-                Text(l10n.localize("processes.count", Int32(model.processes.count)))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack {
+                    Text(l10n.localize("processes.count", Int32(model.processes.count)))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Picker(l10n.localize("processes.sortBy"), selection: $sortOrder) {
+                        Label(l10n.localize("processes.cpu"), systemImage: "cpu").tag(ProcessSort.cpu)
+                        Label(l10n.localize("processes.memory"), systemImage: "memorychip").tag(ProcessSort.memory)
+                        Text(l10n.localize("processes.name")).tag(ProcessSort.name)
+                        Text("PID").tag(ProcessSort.pid)
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
                 if model.processListRestricted {
                     Text(l10n.localize("processes.restricted"))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
-            ForEach(model.processes) { entry in
+            ForEach(sorted) { entry in
                 ProcessRow(entry: entry, onTerminate: {
                     pendingTerminate = entry
                 })
             }
         }
+        .listStyle(.insetGrouped)
         .refreshable {
             model.refreshAll()
         }
@@ -426,6 +603,8 @@ struct ProcessRow: View {
                 .buttonStyle(.borderless)
             }
         }
+        .padding(.vertical, 2)
+        .listRowBackground(entry.isSelf ? Color.accentColor.opacity(0.08) : nil)
     }
 }
 
@@ -459,6 +638,12 @@ struct NetworkTab: View {
                                 icon: "arrow.up.circle.fill",
                                 color: .green,
                                 value: rate(model.networkSentRate))
+                }
+            }
+
+            if !model.networkRxPoints.isEmpty {
+                Section(l10n.localize("network.chart")) {
+                    NetworkRateChart(rx: model.networkRxPoints, tx: model.networkTxPoints)
                 }
             }
 
@@ -497,8 +682,42 @@ struct NetworkTab: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .refreshable {
             model.refreshAll()
+        }
+    }
+}
+
+struct NetworkRateChart: View {
+    let rx: [Double]
+    let tx: [Double]
+
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            Chart {
+                ForEach(Array(rx.enumerated()), id: \.offset) { index, value in
+                    LineMark(x: .value("index", index),
+                             y: .value("rx", value))
+                        .foregroundStyle(.blue)
+                }
+                ForEach(Array(tx.enumerated()), id: \.offset) { index, value in
+                    LineMark(x: .value("index", index),
+                             y: .value("tx", value))
+                        .foregroundStyle(.green)
+                }
+            }
+            .chartYScale(domain: 0...max(rx.max() ?? 0, tx.max() ?? 0, 1_024))
+            .chartForegroundStyleScale([
+                "RX": Color.blue,
+                "TX": Color.green
+            ])
+            .frame(height: 120)
+            .chartLegend(position: .top)
+        } else {
+            Text(LanguageManager.shared.localize("live.requires16"))
+                .font(.callout)
+                .foregroundColor(.secondary)
         }
     }
 }
@@ -577,10 +796,14 @@ struct SettingsTab: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                 }
+                Toggle(l10n.localize("settings.haptics"), isOn: $model.hapticEnabled)
             } header: {
                 Text(l10n.localize("settings.title"))
+            } footer: {
+                Text(l10n.localize("settings.privacy"))
             }
         }
+        .listStyle(.insetGrouped)
     }
 }
 
@@ -682,42 +905,57 @@ struct BatteryRow: View {
 struct InfoRowView: View {
     let row: InfoRow
     let onInfo: () -> Void
+    var onShare: (String) -> Void = { _ in }
     @EnvironmentObject private var l10n: LanguageManager
 
     private var label: String { l10n.localize(row.label) }
 
     var body: some View {
-        if row.collapsible {
-            DisclosureGroup {
-                Text(row.value)
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            } label: {
-                Text(label)
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-            }
-        } else {
-            HStack(alignment: .top) {
-                Text(label)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: 220, alignment: .leading)
-                Spacer(minLength: 8)
-                Text(row.value)
-                    .multilineTextAlignment(.trailing)
-                if FlagInfo.explanation(for: row.label) != nil {
-                    Button(action: onInfo) {
-                        Image(systemName: "info.circle")
-                            .font(.footnote)
-                            .foregroundColor(.accentColor)
-                    }
-                    .buttonStyle(.borderless)
-                    .padding(.leading, 6)
+        Group {
+            if row.collapsible {
+                DisclosureGroup {
+                    Text(row.value)
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                } label: {
+                    Text(label)
+                        .font(.callout)
+                        .foregroundColor(.secondary)
                 }
+            } else {
+                HStack(alignment: .top) {
+                    Text(label)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: 220, alignment: .leading)
+                    Spacer(minLength: 8)
+                    Text(row.value)
+                        .multilineTextAlignment(.trailing)
+                    if FlagInfo.explanation(for: row.label) != nil {
+                        Button(action: onInfo) {
+                            Image(systemName: "info.circle")
+                                .font(.footnote)
+                                .foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.borderless)
+                        .padding(.leading, 6)
+                    }
+                }
+                .font(.callout)
             }
-            .font(.callout)
+        }
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = row.value
+            } label: {
+                Label(l10n.localize("action.copy"), systemImage: "doc.on.doc")
+            }
+            Button {
+                onShare("\(label): \(row.value)")
+            } label: {
+                Label(l10n.localize("action.share"), systemImage: "square.and.arrow.up")
+            }
         }
     }
 }
@@ -813,18 +1051,33 @@ struct LiveChip: View {
 struct CollapsibleSection: View {
     let section: InfoSection
     let onInfo: (InfoRow) -> Void
+    var onShare: (String) -> Void = { _ in }
     @EnvironmentObject private var l10n: LanguageManager
+
+    private var sectionText: String {
+        var lines: [String] = ["\(section.title)"]
+        for row in section.rows {
+            lines.append("\(l10n.localize(row.label)): \(row.value)")
+        }
+        for group in section.groups {
+            lines.append("\(group.title)")
+            for row in group.rows {
+                lines.append("\(l10n.localize(row.label)): \(row.value)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
 
     var body: some View {
         Section {
             DisclosureGroup {
                 ForEach(section.rows) { row in
-                    InfoRowView(row: row, onInfo: { onInfo(row) })
+                    InfoRowView(row: row, onInfo: { onInfo(row) }, onShare: onShare)
                 }
                 ForEach(section.groups) { group in
                     DisclosureGroup {
                         ForEach(group.rows) { row in
-                            InfoRowView(row: row, onInfo: { onInfo(row) })
+                            InfoRowView(row: row, onInfo: { onInfo(row) }, onShare: onShare)
                         }
                     } label: {
                         Text(group.title)
@@ -833,9 +1086,21 @@ struct CollapsibleSection: View {
                     }
                 }
             } label: {
-                Text(section.title)
-                    .font(.callout)
-                    .foregroundColor(.primary)
+                HStack {
+                    Text(section.title)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Button {
+                        onShare(sectionText)
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.footnote)
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(l10n.localize("action.shareSection"))
+                }
             }
         }
     }
@@ -872,6 +1137,18 @@ struct CompatSection: View {
 struct CompatRow: View {
     let app: CompatApp
     @EnvironmentObject private var l10n: LanguageManager
+    @State private var editingNote = false
+    @State private var noteText: String
+
+    init(app: CompatApp) {
+        self.app = app
+        _noteText = State(initialValue: CompatNotes.note(for: app.id) ?? "")
+    }
+
+    private var userNote: String? {
+        let trimmed = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     private var symbol: String {
         switch app.jitNeed {
@@ -901,6 +1178,16 @@ struct CompatRow: View {
                     .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                     .foregroundColor(.accentColor)
                 Spacer()
+                Button {
+                    noteText = CompatNotes.note(for: app.id) ?? ""
+                    editingNote = true
+                } label: {
+                    Image(systemName: userNote == nil ? "square.and.pencil" : "pencil.circle.fill")
+                        .font(.footnote)
+                        .foregroundColor(userNote == nil ? .secondary : .accentColor)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(l10n.localize("compat.editNote"))
                 Image(systemName: symbol)
                     .font(.footnote)
                     .foregroundColor(symbolColor)
@@ -925,11 +1212,26 @@ struct CompatRow: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let userNote = userNote {
+                Label(userNote, systemImage: "note.text")
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let url = app.url, let link = URL(string: url) {
                 Link(l10n.localize("compat.visit"), destination: link)
                     .font(.caption)
             }
         }
         .padding(.vertical, 2)
+        .alert(l10n.localize("compat.editNote"), isPresented: $editingNote) {
+            TextField(l10n.localize("compat.notePlaceholder"), text: $noteText)
+            Button(l10n.localize("common.cancel"), role: .cancel) {
+                noteText = CompatNotes.note(for: app.id) ?? ""
+            }
+            Button(l10n.localize("action.save")) {
+                CompatNotes.set(noteText, for: app.id)
+            }
+        }
     }
 }

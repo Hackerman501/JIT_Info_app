@@ -12,5 +12,9 @@
 	<true/>
 	<key>get-task-allow</key>
 	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.jitinfo.debugger</string>
+	</array>
 </dict>
 </plist>

@@ -769,14 +769,20 @@ enum DeviceInfo {
         let version = info["CFBundleShortVersionString"] as? String ?? "?"
         let build = info["CFBundleVersion"] as? String ?? "?"
         let name = info["CFBundleName"] as? String ?? bundle.bundleIdentifier ?? "?"
+        let displayName = info["CFBundleDisplayName"] as? String ?? name
         var rows: [InfoRow] = [
+            InfoRow(label: "Display name", value: displayName, tier: .dev),
             InfoRow(label: "Bundle name", value: name, tier: .dev),
             InfoRow(label: "Bundle identifier", value: bundle.bundleIdentifier ?? "n/a", tier: .dev),
-            InfoRow(label: "Version", value: "\(version) (\(build))", tier: .expert),
+            InfoRow(label: "Version", value: version, tier: .expert),
+            InfoRow(label: "Build", value: build, tier: .expert),
             InfoRow(label: "Process ID", value: "\(getpid())", tier: .dev),
             InfoRow(label: "Parent PID", value: "\(getppid())", tier: .dev),
             InfoRow(label: "Executable path", value: bundle.executablePath ?? "n/a", tier: .dev)
         ]
+        if let arch = executableArchitecture() {
+            rows.append(InfoRow(label: "Executable architecture", value: arch, tier: .dev))
+        }
         let requested: [(String, String)] = [
             ("com.apple.security.cs.allow-jit", "allow-jit"),
             ("com.apple.developer.kernel.increased-memory-limit", "increased-memory-limit"),
@@ -788,6 +794,12 @@ enum DeviceInfo {
             rows.append(InfoRow(label: "Entitlement \(short)", value: present ? "present" : "absent", tier: .dev))
         }
         return InfoSection(titleKey: "section.app", rows: rows)
+    }
+
+    private static func executableArchitecture() -> String? {
+        let subtype = JITDetector.sysctlInt32("hw.cpusubtype")
+        if subtype == 2 { return "arm64e" }
+        return "arm64"
     }
 
     static func kernelSection() -> InfoSection {
@@ -818,15 +830,26 @@ enum DeviceInfo {
         } else {
             for key in keys {
                 guard let raw = all[key] else { continue }
-                let values = key == "keychain-access-groups" ? raw as? [Any] : nil
-                let collapsible = (values?.count ?? 0) > 0
-                let value = collapsible
-                    ? values!.map { "\($0)" }.joined(separator: "\n")
-                    : "\(raw)"
+                let (value, collapsible) = readableEntitlementValue(raw)
                 rows.append(InfoRow(label: key, value: value, tier: .dev, collapsible: collapsible))
             }
         }
         return InfoSection(titleKey: "section.entitlements", rows: rows)
+    }
+
+    private static func readableEntitlementValue(_ raw: Any) -> (String, Bool) {
+        if let flag = raw as? Bool { return (flag ? "YES" : "NO", false) }
+        if let number = raw as? NSNumber { return (number.stringValue, false) }
+        if let string = raw as? String { return (string, false) }
+        if let array = raw as? [Any] {
+            let text = array.map { "\($0)" }.joined(separator: "\n")
+            return (text, true)
+        }
+        if let dict = raw as? [String: Any] {
+            let text = dict.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
+            return (text, true)
+        }
+        return ("\(raw)", false)
     }
 }
 
@@ -912,8 +935,42 @@ enum CompatDatabase {
                   jitNeed: .no, noteKey: "compat.note.stikdebug", url: nil),
         CompatApp(id: "trollstore", name: "TrollStore",
                   categoryKey: "compat.category.tool", minIOS: "14.0", maxIOS: "17.0",
-                  jitNeed: .no, noteKey: "compat.note.trollstore", url: nil)
+                  jitNeed: .no, noteKey: "compat.note.trollstore", url: nil),
+        CompatApp(id: "retroarch", name: "RetroArch",
+                  categoryKey: "compat.category.emulator", minIOS: "9.0", maxIOS: nil,
+                  jitNeed: .unknown, noteKey: nil, url: nil),
+        CompatApp(id: "play", name: "Play! PS2",
+                  categoryKey: "compat.category.emulator", minIOS: "12.0", maxIOS: nil,
+                  jitNeed: .unknown, noteKey: nil, url: nil),
+        CompatApp(id: "pojav", name: "PojavLauncher",
+                  categoryKey: "compat.category.emulator", minIOS: "13.0", maxIOS: nil,
+                  jitNeed: .unknown, noteKey: nil, url: nil),
+        CompatApp(id: "vita3k", name: "Vita3K",
+                  categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
+                  jitNeed: .unknown, noteKey: nil, url: nil),
+        CompatApp(id: "wiiu", name: "WiiU Emu",
+                  categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
+                  jitNeed: .unknown, noteKey: nil, url: nil)
     ]
+}
+
+enum CompatNotes {
+    private static let key = "compatUserNotes"
+
+    static func note(for id: String) -> String? {
+        let dict = UserDefaults.standard.dictionary(forKey: key) ?? [:]
+        return dict[id] as? String
+    }
+
+    static func set(_ note: String, for id: String) {
+        var dict = UserDefaults.standard.dictionary(forKey: key) ?? [:]
+        if note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            dict.removeValue(forKey: id)
+        } else {
+            dict[id] = note
+        }
+        UserDefaults.standard.set(dict, forKey: key)
+    }
 }
 
 // MARK: - Network monitor
@@ -951,6 +1008,9 @@ final class DiagnosticsModel: ObservableObject {
     @Published var refreshInterval: TimeInterval = 2.0 {
         didSet { UserDefaults.standard.set(refreshInterval, forKey: Keys.refresh) }
     }
+    @Published var hapticEnabled = true {
+        didSet { UserDefaults.standard.set(hapticEnabled, forKey: Keys.haptic) }
+    }
     @Published var jitEnabled = false
     @Published var jitPoints: [InfoRow] = []
     @Published var jitReasons: [String] = []
@@ -966,6 +1026,8 @@ final class DiagnosticsModel: ObservableObject {
     @Published var networkTraffic: NetworkTrafficSnapshot?
     @Published var networkReceivedRate: Double = 0
     @Published var networkSentRate: Double = 0
+    @Published var networkRxPoints: [Double] = []
+    @Published var networkTxPoints: [Double] = []
     @Published var livePoints: [LivePoint] = []
     @Published var thermalState: ProcessInfo.ThermalState = .nominal
     @Published var lowPowerMode = false
@@ -978,6 +1040,7 @@ final class DiagnosticsModel: ObservableObject {
     private enum Keys {
         static let mode = "appMode"
         static let refresh = "refreshInterval"
+        static let haptic = "hapticEnabled"
         static let log = "jitLog"
     }
 
@@ -1010,6 +1073,7 @@ final class DiagnosticsModel: ObservableObject {
         if let m = AppMode(rawValue: UserDefaults.standard.integer(forKey: Keys.mode)) { mode = m }
         let r = UserDefaults.standard.double(forKey: Keys.refresh)
         if r > 0 { refreshInterval = r }
+        hapticEnabled = UserDefaults.standard.object(forKey: Keys.haptic) == nil ? true : UserDefaults.standard.bool(forKey: Keys.haptic)
         loadLog()
         lastJIT = jitLog.first?.jitOn
     }
@@ -1036,7 +1100,7 @@ final class DiagnosticsModel: ObservableObject {
         if let last = lastJIT, jit.enabled != last {
             appendLog(entry: JITLogEntry(id: UUID(), date: Date(), jitOn: jit.enabled,
                                          reason: jit.summary.first ?? l10n.localize("notif.logChanged")))
-            haptic.notificationOccurred(jit.enabled ? .success : .error)
+            if hapticEnabled { haptic.notificationOccurred(jit.enabled ? .success : .error) }
         } else if lastJIT == nil {
             appendLog(entry: JITLogEntry(id: UUID(), date: Date(), jitOn: jit.enabled,
                                          reason: jit.summary.first ?? l10n.localize("notif.logInitial")))
@@ -1079,8 +1143,21 @@ final class DiagnosticsModel: ObservableObject {
         }
         lastNetworkSnapshot = net
         networkTraffic = net
+        networkRxPoints.append(networkReceivedRate)
+        networkTxPoints.append(networkSentRate)
+        if networkRxPoints.count > 120 { networkRxPoints = Array(networkRxPoints.suffix(120)) }
+        if networkTxPoints.count > 120 { networkTxPoints = Array(networkTxPoints.suffix(120)) }
 
         lastUpdated = Date()
+        writeSharedStatus(jit: jit, mem: mem)
+    }
+
+    private func writeSharedStatus(jit: JITDetector.JITResult, mem: MemoryDetector.MemoryResult) {
+        let shared = UserDefaults(suiteName: "group.com.jitinfo.debugger")
+        shared?.set(jit.enabled, forKey: "jitEnabled")
+        shared?.set(mem.extended, forKey: "extendedMemory")
+        shared?.set(jit.summary, forKey: "jitReasons")
+        shared?.set(Date().timeIntervalSince1970, forKey: "lastUpdated")
     }
 
     func reportText() -> String {
@@ -1102,6 +1179,9 @@ final class DiagnosticsModel: ObservableObject {
         lines.append("SoC: \(JITDetector.socName())")
         lines.append("Thermal: \(thermalStateText())")
         lines.append("Low power mode: \(lowPowerMode ? l10n.localize("report.on") : l10n.localize("report.off"))")
+        lines.append("")
+        lines.append(l10n.localize("report.liveSnapshot"))
+        lines.append(contentsOf: liveSnapshotLines())
         lines.append("")
         for section in sections {
             let visible = section.rows.filter { mode.includes($0.tier) }
@@ -1181,6 +1261,7 @@ final class DiagnosticsModel: ObservableObject {
             "memory": ["extended": extendedMemory, "reasons": memoryReasons],
             "thermal": thermalStateText(),
             "lowPower": lowPowerMode,
+            "live": liveSnapshotDict(),
             "processesRestricted": processListRestricted,
             "processes": processesArray,
             "recommendations": recommendations,
@@ -1202,11 +1283,47 @@ final class DiagnosticsModel: ObservableObject {
         }
     }
 
-    func historyCSV() -> String {
+    private func liveSnapshotLines() -> [String] {
+        let l10n = LanguageManager.shared
+        let vm = MemoryDetector.taskVM()
+        let selfCPU = processes.first(where: { $0.isSelf })?.cpuPercent ?? 0
+        let memMB = Double(vm?.footprint ?? 0) / 1_048_576.0
+        let availableMB = Double(os_proc_available_memory()) / 1_048_576.0
+        var lines: [String] = []
+        lines.append("\u{2022} \(l10n.localize("live.cpu")): \(String(format: "%.1f %%", selfCPU))")
+        lines.append("\u{2022} \(l10n.localize("live.memory")): \(MemoryDetector.bytes(Int64(memMB * 1_048_576)))")
+        lines.append("\u{2022} \(l10n.localize("live.available")): \(MemoryDetector.bytes(Int64(availableMB * 1_048_576)))")
+        lines.append("\u{2022} \(l10n.localize("network.download")): \(rateText(networkReceivedRate))")
+        lines.append("\u{2022} \(l10n.localize("network.upload")): \(rateText(networkSentRate))")
+        lines.append("\u{2022} \(l10n.localize("status.uptime")): \(DeviceInfo.uptime())")
+        return lines
+    }
+
+    private func liveSnapshotDict() -> [String: Any] {
+        let vm = MemoryDetector.taskVM()
+        let selfCPU = processes.first(where: { $0.isSelf })?.cpuPercent ?? 0
+        let memMB = Double(vm?.footprint ?? 0) / 1_048_576.0
+        let availableMB = Double(os_proc_available_memory()) / 1_048_576.0
+        return [
+            "cpuPercent": selfCPU,
+            "memoryMB": memMB,
+            "availableMB": availableMB,
+            "receivedRate": networkReceivedRate,
+            "sentRate": networkSentRate,
+            "uptime": DeviceInfo.uptime()
+        ]
+    }
+
+    private func rateText(_ value: Double) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .binary) + " /s"
+    }
+
+    func historyCSV(within days: Int? = nil) -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let entries = filteredLog(days: days)
         var lines = ["date,jitOn,reason"]
-        for entry in jitLog {
+        for entry in entries {
             let date = f.string(from: entry.date)
             let on = entry.jitOn ? "ON" : "OFF"
             let reason = entry.reason.replacingOccurrences(of: "\"", with: "\"\"")
@@ -1215,12 +1332,24 @@ final class DiagnosticsModel: ObservableObject {
         return lines.joined(separator: "\n")
     }
 
-    func historyJSON() -> String {
+    func historyJSON(within days: Int? = nil) -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        let items = jitLog.map { ["date": f.string(from: $0.date), "jitOn": $0.jitOn, "reason": $0.reason] }
+        let items = filteredLog(days: days).map { ["date": f.string(from: $0.date), "jitOn": $0.jitOn, "reason": $0.reason] }
         let data = (try? JSONSerialization.data(withJSONObject: items, options: [.prettyPrinted])) ?? Data()
         return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
+    func filteredLog(days: Int?) -> [JITLogEntry] {
+        guard let days = days else { return jitLog }
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? .distantPast
+        return jitLog.filter { $0.date >= cutoff }
+    }
+
+    func exportTimestamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd-HHmmss"
+        return f.string(from: Date())
     }
 
     private func computeRecommendations() -> [String] {
