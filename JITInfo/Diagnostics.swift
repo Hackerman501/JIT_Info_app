@@ -783,6 +783,7 @@ final class DiagnosticsModel: ObservableObject {
     @Published var lastUpdated = Date()
     @Published var jitLog: [JITLogEntry] = []
     @Published var processes: [ProcessEntry] = []
+    @Published var processListRestricted = false
     @Published var networkTraffic: NetworkTrafficSnapshot?
     @Published var networkReceivedRate: Double = 0
     @Published var networkSentRate: Double = 0
@@ -875,7 +876,9 @@ final class DiagnosticsModel: ObservableObject {
 
         sections = DeviceInfo.allSections(network: network)
 
-        processes = ProcessManager.list()
+        let result = ProcessManager.list()
+        processes = result.entries
+        processListRestricted = result.restricted
 
         let net = NetworkTraffic.snapshot()
         if let net = net, let last = lastNetworkSnapshot, net.received >= last.received, net.sent >= last.sent {

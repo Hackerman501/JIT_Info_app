@@ -112,6 +112,7 @@ private let enStrings: [String: String] = [
     "tab.settings": "Settings",
 
     "processes.count": "%d processes",
+    "processes.restricted": "iOS blocks the process list in the sandbox. Only this app is visible \u{2013} the full list requires a jailbreak.",
     "processes.self": "this app",
     "processes.terminate": "Terminate",
     "processes.terminateConfirm": "Terminate \"%@\" (PID %d)?",
@@ -249,6 +250,7 @@ private let deStrings: [String: String] = [
     "tab.settings": "Einstellungen",
 
     "processes.count": "%d Prozesse",
+    "processes.restricted": "iOS blockiert die Prozessliste in der Sandbox. Nur diese App ist sichtbar \u{2013} die vollst\u{00E4}ndige Liste erfordert einen Jailbreak.",
     "processes.self": "diese App",
     "processes.terminate": "Beenden",
     "processes.terminateConfirm": "\u{201E}%@\u{201C} (PID %d) beenden?",

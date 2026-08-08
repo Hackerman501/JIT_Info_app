@@ -279,6 +279,11 @@ struct ProcessesTab: View {
                 Text(l10n.localize("processes.count", Int32(model.processes.count)))
                     .font(.caption)
                     .foregroundColor(.secondary)
+                if model.processListRestricted {
+                    Text(l10n.localize("processes.restricted"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
             ForEach(model.processes) { entry in
                 ProcessRow(entry: entry, onTerminate: {

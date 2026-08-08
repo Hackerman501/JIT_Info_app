@@ -14,6 +14,11 @@ struct ProcessEntry: Identifiable {
     var id: pid_t { pid }
 }
 
+struct ProcessListResult {
+    let entries: [ProcessEntry]
+    let restricted: Bool
+}
+
 // MARK: - libproc helpers
 
 private let PROC_PIDTASKINFO: Int32 = 4
@@ -77,61 +82,88 @@ enum ProcessManager {
 
     private static var lastSnapshots: [pid_t: Snapshot] = [:]
 
-    static func list() -> [ProcessEntry] {
-        // KERN_PROC_ALL via sysctl returns nothing from the iOS sandbox
-        // (even for normally sideloaded apps), so enumerate PIDs through
-        // libproc's proc_listallpids instead.
+    static func list() -> ProcessListResult {
+        let now = Date().timeIntervalSince1970
+        let cpuCount = Double(ProcessInfo.processInfo.processorCount)
+
+        // Since iOS 9 (WWDC 2015, session 703) the sandbox blocks the whole
+        // process table for apps: KERN_PROC_ALL via sysctl fails with EPERM,
+        // and proc_listallpids is only a thin wrapper around that same sysctl,
+        // so it returns 0 on stock iOS. Apps may only query their own process.
         let pidCount = Int(proc_listallpids(nil, 0))
-        guard pidCount > 0, pidCount < 8192 else { return [] }
+        guard pidCount > 0, pidCount < 8192 else {
+            return selfOnlyResult(now: now, cpuCount: cpuCount)
+        }
+
         var pids = [pid_t](repeating: 0, count: pidCount)
         let written = Int(proc_listallpids(&pids, Int32(MemoryLayout<pid_t>.size * pids.count)))
-        guard written > 0 else { return [] }
+        guard written > 0 else {
+            return selfOnlyResult(now: now, cpuCount: cpuCount)
+        }
 
         // Best-effort process states; stays empty inside the sandbox.
         let stateMap = processStateMap()
 
-        let now = Date().timeIntervalSince1970
-        let selfPID = getpid()
-        let cpuCount = Double(ProcessInfo.processInfo.processorCount)
         var entries: [ProcessEntry] = []
         var current: [pid_t: Snapshot] = [:]
 
         for pid in pids.prefix(min(written, pids.count)) where pid > 0 {
             let name = processName(pid)
             let state = stateMap[pid].map(stateString) ?? LanguageManager.shared.localize("processes.state.unknown")
-
-            let info = taskInfo(pid: pid)
-            let user = info?.totalUser ?? 0
-            let sys = info?.totalSystem ?? 0
-            let memory = info?.residentSize ?? 0
-
-            var cpu = 0.0
-            if let prev = lastSnapshots[pid] {
-                let dUser = user > prev.user ? user - prev.user : 0
-                let dSys = sys > prev.sys ? sys - prev.sys : 0
-                let dWall = now - prev.wall
-                if dWall > 0 {
-                    let seconds = (Double(dUser) + Double(dSys)) / 1_000_000.0
-                    cpu = min(seconds / dWall * 100.0, 100.0 * cpuCount)
-                }
-            }
-            current[pid] = Snapshot(user: user, sys: sys, wall: now)
-
-            entries.append(ProcessEntry(pid: pid,
-                                        name: name.isEmpty ? "\(pid)" : name,
-                                        state: state,
-                                        cpuPercent: cpu,
-                                        memoryBytes: memory,
-                                        isSelf: pid == selfPID))
+            entries.append(buildEntry(pid: pid, name: name, state: state, now: now, cpuCount: cpuCount, current: &current))
         }
 
         lastSnapshots = current
 
-        return entries.sorted {
+        return ProcessListResult(entries: entries.sorted {
             let a = $0.isSelf, b = $1.isSelf
             if a != b { return a }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }, restricted: false)
+    }
+
+    private static func selfOnlyResult(now: TimeInterval, cpuCount: Double) -> ProcessListResult {
+        var current: [pid_t: Snapshot] = [:]
+        let entry = buildEntry(pid: getpid(),
+                               name: selfProcessName(),
+                               state: LanguageManager.shared.localize("processes.state.unknown"),
+                               now: now, cpuCount: cpuCount, current: &current)
+        lastSnapshots = current
+        return ProcessListResult(entries: [entry], restricted: true)
+    }
+
+    private static func buildEntry(pid: pid_t, name: String, state: String,
+                                   now: TimeInterval, cpuCount: Double,
+                                   current: inout [pid_t: Snapshot]) -> ProcessEntry {
+        let info = taskInfo(pid: pid)
+        let user = info?.totalUser ?? 0
+        let sys = info?.totalSystem ?? 0
+        let memory = info?.residentSize ?? 0
+
+        var cpu = 0.0
+        if let prev = lastSnapshots[pid] {
+            let dUser = user > prev.user ? user - prev.user : 0
+            let dSys = sys > prev.sys ? sys - prev.sys : 0
+            let dWall = now - prev.wall
+            if dWall > 0 {
+                let seconds = (Double(dUser) + Double(dSys)) / 1_000_000.0
+                cpu = min(seconds / dWall * 100.0, 100.0 * cpuCount)
+            }
         }
+        current[pid] = Snapshot(user: user, sys: sys, wall: now)
+
+        return ProcessEntry(pid: pid,
+                            name: name.isEmpty ? "\(pid)" : name,
+                            state: state,
+                            cpuPercent: cpu,
+                            memoryBytes: memory,
+                            isSelf: pid == getpid())
+    }
+
+    private static func selfProcessName() -> String {
+        let name = processName(getpid())
+        if !name.isEmpty { return name }
+        return Bundle.main.infoDictionary?[kCFBundleNameKey as String] as? String ?? ""
     }
 
     @discardableResult
