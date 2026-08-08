@@ -44,6 +44,7 @@ struct InfoSection: Identifiable {
     var id: String { titleKey }
     let titleKey: String
     let rows: [InfoRow]
+    var groups: [InfoSection] = []
 
     var title: String { LanguageManager.shared.localize(titleKey) }
 }
@@ -576,15 +577,12 @@ enum DeviceInfo {
             systemSection(),
             cpuSection(),
             memorySection(),
-            storageSection(),
-            batterySection(),
-            powerSection(),
+            batteryPowerSection(),
             screenSection(),
             networkSection(network),
-            localeSection(),
-            appSection(),
             kernelSection(),
-            entitlementsSection()
+            entitlementsSection(),
+            appSection()
         ]
     }
 
@@ -616,7 +614,18 @@ enum DeviceInfo {
             InfoRow(label: "Uptime", value: uptime(), tier: .expert),
             InfoRow(label: "Jailbroken hints", value: JITDetector.jailbrokenHints().isEmpty ? "No" : "Yes", tier: .expert)
         ])
-        return InfoSection(titleKey: "section.system", rows: rows)
+        return InfoSection(titleKey: "section.system", rows: rows + localeRows())
+    }
+
+    private static func localeRows() -> [InfoRow] {
+        let l = Locale.current
+        return [
+            InfoRow(label: "Locale", value: l.identifier, tier: .expert),
+            InfoRow(label: "Region", value: l.regionCode ?? "n/a", tier: .expert),
+            InfoRow(label: "Language", value: Locale.preferredLanguages.first ?? "n/a", tier: .expert),
+            InfoRow(label: "24-hour", value: DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: l)?.contains("H") == true ? "YES" : "NO", tier: .expert),
+            InfoRow(label: "Time zone", value: TimeZone.current.identifier, tier: .expert)
+        ]
     }
 
     static func cpuSection() -> InfoSection {
@@ -656,10 +665,11 @@ enum DeviceInfo {
         }
         let asLim = MemoryDetector.rlimitValue(RLIMIT_AS)
         rows.append(InfoRow(label: "RLIMIT_AS cur/max", value: "\(MemoryDetector.limitText(asLim.cur)) / \(MemoryDetector.limitText(asLim.max))", tier: .dev))
-        return InfoSection(titleKey: "section.memory", rows: rows)
+        return InfoSection(titleKey: "section.memory", rows: rows,
+                           groups: [InfoSection(titleKey: "section.storage", rows: storageRows())])
     }
 
-    static func storageSection() -> InfoSection {
+    private static func storageRows() -> [InfoRow] {
         var rows: [InfoRow] = []
         if let a = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()) {
             if let size = (a[.systemSize] as? NSNumber)?.uint64Value {
@@ -669,27 +679,28 @@ enum DeviceInfo {
                 rows.append(InfoRow(label: "Disk free", value: MemoryDetector.bytes(Int64(free))))
             }
         }
-        return InfoSection(titleKey: "section.storage", rows: rows.isEmpty ? [InfoRow(label: "Storage", value: "n/a")] : rows)
+        return rows.isEmpty ? [InfoRow(label: "Storage", value: "n/a")] : rows
     }
 
-    static func batterySection() -> InfoSection {
+    private static func batteryRows() -> [InfoRow] {
         let level = UIDevice.current.batteryLevel
         let state = UIDevice.current.batteryState
+        let l10n = LanguageManager.shared
         let stateText: String
         switch state {
-        case .unplugged: stateText = "Unplugged"
-        case .charging: stateText = "Charging"
-        case .full: stateText = "Full"
-        default: stateText = "Unknown"
+        case .unplugged: stateText = l10n.localize("status.battery.unplugged")
+        case .charging: stateText = l10n.localize("status.battery.charging")
+        case .full: stateText = l10n.localize("status.battery.full")
+        default: stateText = l10n.localize("status.battery.unknown")
         }
         let levelText = level < 0 ? "n/a" : "\(Int(level * 100)) %"
-        return InfoSection(titleKey: "section.battery", rows: [
+        return [
             InfoRow(label: "Level", value: levelText, tier: .expert),
             InfoRow(label: "State", value: stateText, tier: .expert)
-        ])
+        ]
     }
 
-    static func powerSection() -> InfoSection {
+    private static func powerRows() -> [InfoRow] {
         let info = ProcessInfo.processInfo
         let l10n = LanguageManager.shared
         let thermal: String
@@ -700,11 +711,15 @@ enum DeviceInfo {
         case .critical: thermal = l10n.localize("power.thermal.critical")
         @unknown default: thermal = "n/a"
         }
-        return InfoSection(titleKey: "section.power", rows: [
+        return [
             InfoRow(label: "power.thermal", value: thermal, tier: .expert),
             InfoRow(label: "power.lowPower", value: info.isLowPowerModeEnabled ? "YES" : "NO", tier: .expert),
             InfoRow(label: "power.appState", value: appStateText(), tier: .expert)
-        ])
+        ]
+    }
+
+    static func batteryPowerSection() -> InfoSection {
+        InfoSection(titleKey: "section.batteryPower", rows: batteryRows() + powerRows())
     }
 
     private static func appStateText() -> String {
@@ -747,17 +762,6 @@ enum DeviceInfo {
 
     static func networkSection(_ status: String) -> InfoSection {
         InfoSection(titleKey: "section.network", rows: [InfoRow(label: "Status", value: status, tier: .expert)])
-    }
-
-    static func localeSection() -> InfoSection {
-        let l = Locale.current
-        return InfoSection(titleKey: "section.locale", rows: [
-            InfoRow(label: "Locale", value: l.identifier, tier: .expert),
-            InfoRow(label: "Region", value: l.regionCode ?? "n/a", tier: .expert),
-            InfoRow(label: "Language", value: Locale.preferredLanguages.first ?? "n/a", tier: .expert),
-            InfoRow(label: "24-hour", value: DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: l)?.contains("H") == true ? "YES" : "NO", tier: .expert),
-            InfoRow(label: "Time zone", value: TimeZone.current.identifier, tier: .expert)
-        ])
     }
 
     static func appSection() -> InfoSection {
@@ -993,7 +997,12 @@ final class DiagnosticsModel: ObservableObject {
     var visibleSections: [InfoSection] {
         sections.compactMap { section in
             let rows = section.rows.filter { mode.includes($0.tier) }
-            return rows.isEmpty ? nil : InfoSection(titleKey: section.titleKey, rows: rows)
+            let groups = section.groups.compactMap { group -> InfoSection? in
+                let gRows = group.rows.filter { mode.includes($0.tier) }
+                return gRows.isEmpty ? nil : InfoSection(titleKey: group.titleKey, rows: gRows)
+            }
+            if rows.isEmpty && groups.isEmpty { return nil }
+            return InfoSection(titleKey: section.titleKey, rows: rows, groups: groups)
         }
     }
 
@@ -1109,12 +1118,22 @@ final class DiagnosticsModel: ObservableObject {
         lines.append("")
         for section in sections {
             let visible = section.rows.filter { mode.includes($0.tier) }
-            guard !visible.isEmpty else { continue }
-            lines.append("## \(section.title)")
-            for row in visible {
-                lines.append("\(row.label): \(row.value)")
+            if !visible.isEmpty {
+                lines.append("## \(section.title)")
+                for row in visible {
+                    lines.append("\(row.label): \(row.value)")
+                }
+                lines.append("")
             }
-            lines.append("")
+            for group in section.groups {
+                let gVisible = group.rows.filter { mode.includes($0.tier) }
+                guard !gVisible.isEmpty else { continue }
+                lines.append("### \(group.title)")
+                for row in gVisible {
+                    lines.append("\(row.label): \(row.value)")
+                }
+                lines.append("")
+            }
         }
         if processListRestricted {
             lines.append(l10n.localize("report.processesRestricted"))
@@ -1145,8 +1164,15 @@ final class DiagnosticsModel: ObservableObject {
         var sectionsDict: [String: [[String: String]]] = [:]
         for section in sections {
             let visible = section.rows.filter { mode.includes($0.tier) }
-            guard !visible.isEmpty else { continue }
-            sectionsDict[section.titleKey] = visible.map { ["label": $0.label, "value": $0.value] }
+            if !visible.isEmpty {
+                sectionsDict[section.titleKey] = visible.map { ["label": $0.label, "value": $0.value] }
+            }
+            for group in section.groups {
+                let gVisible = group.rows.filter { mode.includes($0.tier) }
+                if !gVisible.isEmpty {
+                    sectionsDict["\(section.titleKey).\(group.titleKey)"] = gVisible.map { ["label": $0.label, "value": $0.value] }
+                }
+            }
         }
         var processesArray: [[String: Any]] = []
         for p in processes {

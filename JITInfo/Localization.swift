@@ -160,7 +160,7 @@ private let enStrings: [String: String] = [
     "status.battery.unknown": "Unknown",
     "status.battery.low": "Battery below 20% \u{2013} JIT sessions may end abruptly when the device sleeps.",
 
-    "recommendation.title": "Recommendation",
+    "recommendation.title": "JIT Recommendation",
 
     "history.title": "JIT History",
     "history.empty": "No entries yet",
@@ -203,6 +203,7 @@ private let enStrings: [String: String] = [
     "section.memory": "Memory",
     "section.storage": "Storage",
     "section.battery": "Battery",
+    "section.batteryPower": "Battery & Power",
     "section.screen": "Screen",
     "section.network": "Network",
     "section.locale": "Locale",
@@ -348,7 +349,7 @@ private let deStrings: [String: String] = [
     "status.battery.unknown": "Unbekannt",
     "status.battery.low": "Akku unter 20 % \u{2013} JIT-Sitzungen k\u{00F6}nnen beim Schlafenlegen des Ger\u{00E4}ts abrupt enden.",
 
-    "recommendation.title": "Empfehlung",
+    "recommendation.title": "Empfehlung f\u{00FC}r JIT",
 
     "history.title": "JIT-Verlauf",
     "history.empty": "Noch keine Eintr\u{00E4}ge",
@@ -391,6 +392,7 @@ private let deStrings: [String: String] = [
     "section.memory": "Speicher",
     "section.storage": "Speicherplatz",
     "section.battery": "Akku",
+    "section.batteryPower": "Akku & Energie",
     "section.screen": "Display",
     "section.network": "Netzwerk",
     "section.locale": "Region",

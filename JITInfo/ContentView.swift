@@ -138,10 +138,6 @@ struct StatusTab: View {
                 .labelsHidden()
             }
 
-            Section(l10n.localize("status.live")) {
-                LiveSection(model: model)
-            }
-
             Section(l10n.localize("status.title")) {
                 HStack(alignment: .top, spacing: 10) {
                     StatusCard(title: "JIT",
@@ -175,24 +171,52 @@ struct StatusTab: View {
             }
 
             if !model.recommendations.isEmpty {
-                Section(l10n.localize("recommendation.title")) {
-                    ForEach(model.recommendations, id: \.self) { r in
-                        Text(r)
+                Section {
+                    DisclosureGroup {
+                        ForEach(model.recommendations, id: \.self) { r in
+                            Text(r)
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } label: {
+                        Text(l10n.localize("recommendation.title"))
                             .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundColor(.primary)
                     }
                 }
             }
 
+            Section {
+                DisclosureGroup {
+                    LiveSection(model: model)
+                } label: {
+                    Text(l10n.localize("status.live"))
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                }
+            }
+
             if !model.visibleJITPoints.isEmpty {
-                Section(l10n.localize("status.jitChecks")) {
-                    ForEach(model.visibleJITPoints) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
+                Section {
+                    DisclosureGroup {
+                        ForEach(model.visibleJITPoints) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
+                    } label: {
+                        Text(l10n.localize("status.jitChecks"))
+                            .font(.callout)
+                            .foregroundColor(.primary)
+                    }
                 }
             }
 
             if !model.visibleMemoryPoints.isEmpty {
-                Section(l10n.localize("status.memoryChecks")) {
-                    ForEach(model.visibleMemoryPoints) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
+                Section {
+                    DisclosureGroup {
+                        ForEach(model.visibleMemoryPoints) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
+                    } label: {
+                        Text(l10n.localize("status.memoryChecks"))
+                            .font(.callout)
+                            .foregroundColor(.primary)
+                    }
                 }
             }
         }
@@ -261,8 +285,8 @@ struct DetailsTab: View {
             CompatSection()
 
             ForEach(model.visibleSections) { section in
-                Section(header: Text(section.title)) {
-                    ForEach(section.rows) { row in InfoRowView(row: row, onInfo: { infoRow = row }) }
+                CollapsibleSection(section: section) { row in
+                    infoRow = row
                 }
             }
         }
@@ -781,6 +805,37 @@ struct LiveChip: View {
     }
 }
 
+struct CollapsibleSection: View {
+    let section: InfoSection
+    let onInfo: (InfoRow) -> Void
+    @EnvironmentObject private var l10n: LanguageManager
+
+    var body: some View {
+        Section {
+            DisclosureGroup {
+                ForEach(section.rows) { row in
+                    InfoRowView(row: row, onInfo: { onInfo(row) })
+                }
+                ForEach(section.groups) { group in
+                    DisclosureGroup {
+                        ForEach(group.rows) { row in
+                            InfoRowView(row: row, onInfo: { onInfo(row) })
+                        }
+                    } label: {
+                        Text(group.title)
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } label: {
+                Text(section.title)
+                    .font(.callout)
+                    .foregroundColor(.primary)
+            }
+        }
+    }
+}
+
 struct CompatSection: View {
     @EnvironmentObject private var l10n: LanguageManager
     @State private var query = ""
@@ -792,12 +847,18 @@ struct CompatSection: View {
     }
 
     var body: some View {
-        Section(l10n.localize("compat.title")) {
-            TextField(l10n.localize("compat.search"), text: $query)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            ForEach(filtered) { app in
-                CompatRow(app: app)
+        Section {
+            DisclosureGroup {
+                TextField(l10n.localize("compat.search"), text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                ForEach(filtered) { app in
+                    CompatRow(app: app)
+                }
+            } label: {
+                Text(l10n.localize("compat.title"))
+                    .font(.callout)
+                    .foregroundColor(.primary)
             }
         }
     }
