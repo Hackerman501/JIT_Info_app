@@ -78,12 +78,10 @@ final class LanguageManager: ObservableObject {
 
     private var systemLanguage: AppLanguage {
         let code = Locale.preferredLanguages.first?.lowercased() ?? "en"
-        switch {
-        case code.hasPrefix("de"): return .german
-        case code.hasPrefix("fr"): return .french
-        case code.hasPrefix("es"): return .spanish
-        default: return .english
-        }
+        if code.hasPrefix("de") { return .german }
+        if code.hasPrefix("fr") { return .french }
+        if code.hasPrefix("es") { return .spanish }
+        return .english
     }
 
     var locale: Locale {
