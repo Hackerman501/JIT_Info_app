@@ -1,12 +1,13 @@
 import SwiftUI
 import UIKit
+import Charts
 
 struct ContentView: View {
     @StateObject private var model = DiagnosticsModel()
     @EnvironmentObject private var l10n: LanguageManager
     @AppStorage("appearance") private var appearance = AppAppearance.system
-    @State private var showShare = false
     @State private var infoRow: InfoRow?
+    @State private var shareItem: ShareItem?
     @State private var selectedTab: AppTab = .status
 
     var body: some View {
@@ -46,8 +47,17 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showShare = true
+                    Menu {
+                        Button {
+                            shareItem = ShareItem(text: model.reportText())
+                        } label: {
+                            Label(l10n.localize("report.format.markdown"), systemImage: "doc.text")
+                        }
+                        Button {
+                            shareItem = ShareItem(text: model.reportJSON())
+                        } label: {
+                            Label(l10n.localize("report.format.json"), systemImage: "curlybraces")
+                        }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
@@ -68,8 +78,8 @@ struct ContentView: View {
                 model.stop()
             }
         }
-        .sheet(isPresented: $showShare) {
-            ActivityView(items: [model.reportText()])
+        .sheet(item: $shareItem) { item in
+            ActivityView(items: [item.text])
         }
         .alert(item: $infoRow) { row in
             Alert(
@@ -119,13 +129,17 @@ struct StatusTab: View {
             }
 
             Section {
-                Picker("Modus", selection: $model.mode) {
+                Picker(l10n.localize("settings.mode"), selection: $model.mode) {
                     ForEach(AppMode.allCases) { m in
                         Text(m.title).tag(m)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+            }
+
+            Section(l10n.localize("status.live")) {
+                LiveSection(model: model)
             }
 
             Section(l10n.localize("status.title")) {
@@ -208,7 +222,7 @@ struct DetailsTab: View {
                                 Text(entry.date, format: .dateTime.hour().minute().second())
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                Text(entry.jitOn ? "ON" : "OFF")
+                                Text(entry.jitOn ? l10n.localize("status.on") : l10n.localize("status.off"))
                                     .font(.callout.bold())
                                     .foregroundColor(entry.jitOn ? .green : .red)
                                 Spacer(minLength: 8)
@@ -243,6 +257,8 @@ struct DetailsTab: View {
                         .foregroundColor(.primary)
                 }
             }
+
+            CompatSection()
 
             ForEach(model.visibleSections) { section in
                 Section(header: Text(section.title)) {
@@ -543,6 +559,7 @@ struct StatusCard: View {
     let title: String
     let enabled: Bool
     let details: [String]
+    @EnvironmentObject private var l10n: LanguageManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -554,7 +571,7 @@ struct StatusCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundColor(.secondary)
             }
-            Text(enabled ? "ON" : "OFF")
+            Text(enabled ? l10n.localize("status.on") : l10n.localize("status.off"))
                 .font(.system(.largeTitle, design: .rounded).weight(.heavy))
                 .foregroundColor(enabled ? .green : .red)
             if !details.isEmpty {
@@ -636,6 +653,9 @@ struct BatteryRow: View {
 struct InfoRowView: View {
     let row: InfoRow
     let onInfo: () -> Void
+    @EnvironmentObject private var l10n: LanguageManager
+
+    private var label: String { l10n.localize(row.label) }
 
     var body: some View {
         if row.collapsible {
@@ -646,13 +666,13 @@ struct InfoRowView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             } label: {
-                Text(row.label)
+                Text(label)
                     .font(.callout)
                     .foregroundColor(.secondary)
             }
         } else {
             HStack(alignment: .top) {
-                Text(row.label)
+                Text(label)
                     .foregroundColor(.secondary)
                     .frame(maxWidth: 220, alignment: .leading)
                 Spacer(minLength: 8)
@@ -673,6 +693,11 @@ struct InfoRowView: View {
     }
 }
 
+struct ShareItem: Identifiable {
+    let id = UUID()
+    let text: String
+}
+
 struct ActivityView: UIViewControllerRepresentable {
     let items: [Any]
 
@@ -681,4 +706,144 @@ struct ActivityView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+struct LiveSection: View {
+    @ObservedObject var model: DiagnosticsModel
+    @EnvironmentObject private var l10n: LanguageManager
+
+    private var latest: LivePoint? { model.livePoints.last }
+
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            VStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    LiveChip(title: l10n.localize("live.cpu"),
+                             value: String(format: "%.1f %%", latest?.cpu ?? 0),
+                             color: .blue)
+                    LiveChip(title: l10n.localize("live.memory"),
+                             value: MemoryDetector.bytes(Int64((latest?.memoryMB ?? 0) * 1_048_576)),
+                             color: .green)
+                    LiveChip(title: l10n.localize("live.thermal"),
+                             value: model.thermalStateText(),
+                             color: thermalColor)
+                }
+                if model.livePoints.count > 1 {
+                    Chart(model.livePoints) { point in
+                        LineMark(x: .value("time", point.time),
+                                 y: .value("cpu", point.cpu))
+                            .foregroundStyle(.blue)
+                            .interpolationMethod(.monotone)
+                    }
+                    .frame(height: 90)
+                    .chartYScale(domain: 0.0...100.0)
+                }
+            }
+        } else {
+            Text(l10n.localize("live.requires16"))
+                .font(.callout)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var thermalColor: Color {
+        switch model.thermalState {
+        case .nominal: return .green
+        case .fair: return .orange
+        case .serious, .critical: return .red
+        @unknown default: return .gray
+        }
+    }
+}
+
+struct LiveChip: View {
+    let title: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .foregroundColor(color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+}
+
+struct CompatSection: View {
+    @EnvironmentObject private var l10n: LanguageManager
+    @State private var query = ""
+
+    private var filtered: [CompatApp] {
+        let all = CompatDatabase.apps
+        guard !query.isEmpty else { return all }
+        return all.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        Section(l10n.localize("compat.title")) {
+            TextField(l10n.localize("compat.search"), text: $query)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            ForEach(filtered) { app in
+                CompatRow(app: app)
+            }
+        }
+    }
+}
+
+struct CompatRow: View {
+    let app: CompatApp
+    @EnvironmentObject private var l10n: LanguageManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(app.name)
+                    .font(.callout.weight(.semibold))
+                Text(app.category)
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                    .foregroundColor(.accentColor)
+                Spacer()
+                Image(systemName: app.needsJIT ? "bolt.fill" : "checkmark.circle")
+                    .font(.footnote)
+                    .foregroundColor(app.needsJIT ? .orange : .green)
+            }
+            HStack(spacing: 6) {
+                Text(l10n.localize("compat.ios", app.iosRange))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if app.needsJIT {
+                    Text(l10n.localize("compat.needsJit"))
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+            if let note = app.note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let url = app.url, let link = URL(string: url) {
+                Link(l10n.localize("compat.visit"), destination: link)
+                    .font(.caption)
+            }
+        }
+        .padding(.vertical, 2)
+    }
 }

@@ -55,6 +55,14 @@ struct JITLogEntry: Identifiable, Codable {
     let reason: String
 }
 
+struct LivePoint: Identifiable {
+    let id = UUID()
+    let time: Date
+    let cpu: Double
+    let memoryMB: Double
+    let availableMB: Double
+}
+
 // MARK: - JIT detection
 
 private let CS_OPS_STATUS: UInt32 = 0
@@ -328,6 +336,66 @@ enum JITDetector {
         // iPod
         "iPod9,1": "iPod touch (7th)"
     ]
+    // MARK: SoC detection
+
+    static func socName() -> String {
+        socMap[sysctlString("hw.machine")] ?? "unknown"
+    }
+
+    static func socFamily() -> String {
+        let n = socName()
+        if n == "unknown" { return "unknown" }
+        if let space = n.firstIndex(of: " ") { return String(n[..<space]) }
+        return n
+    }
+
+    static func isCheckra1nCompatible() -> Bool {
+        ["A8", "A9", "A10", "A11"].contains(socFamily())
+    }
+
+    static func isStikDebugTXMCompatible() -> Bool {
+        ["A13", "A14", "M1"].contains(socFamily())
+    }
+
+    private static let socMap: [String: String] = [
+        "iPhone6,1": "A7", "iPhone6,2": "A7",
+        "iPhone7,1": "A8", "iPhone7,2": "A8",
+        "iPhone8,1": "A9", "iPhone8,2": "A9", "iPhone8,4": "A9",
+        "iPhone9,1": "A10", "iPhone9,2": "A10", "iPhone9,3": "A10", "iPhone9,4": "A10",
+        "iPhone10,1": "A11", "iPhone10,2": "A11", "iPhone10,3": "A11",
+        "iPhone10,4": "A11", "iPhone10,5": "A11", "iPhone10,6": "A11",
+        "iPhone11,2": "A12", "iPhone11,4": "A12", "iPhone11,6": "A12", "iPhone11,8": "A12",
+        "iPhone12,1": "A13", "iPhone12,3": "A13", "iPhone12,5": "A13", "iPhone12,8": "A13",
+        "iPhone13,1": "A14", "iPhone13,2": "A14", "iPhone13,3": "A14", "iPhone13,4": "A14",
+        "iPhone14,2": "A15", "iPhone14,3": "A15", "iPhone14,4": "A15", "iPhone14,5": "A15",
+        "iPhone14,7": "A15", "iPhone14,8": "A15",
+        "iPhone15,2": "A16", "iPhone15,3": "A16", "iPhone15,4": "A16", "iPhone15,5": "A16",
+        "iPhone16,1": "A17 Pro", "iPhone16,2": "A17 Pro",
+        "iPhone16,3": "A18", "iPhone16,4": "A18", "iPhone16,5": "A18",
+        "iPhone17,1": "A19 Pro", "iPhone17,2": "A19 Pro", "iPhone17,3": "A19", "iPhone17,4": "A19",
+        "iPad5,1": "A8", "iPad5,2": "A8", "iPad5,3": "A8X", "iPad5,4": "A8X",
+        "iPad6,3": "A9X", "iPad6,4": "A9X", "iPad6,7": "A9X", "iPad6,8": "A9X",
+        "iPad6,11": "A9", "iPad6,12": "A9",
+        "iPad7,1": "A10X", "iPad7,2": "A10X", "iPad7,3": "A10X", "iPad7,4": "A10X",
+        "iPad7,5": "A10", "iPad7,6": "A10",
+        "iPad8,1": "A12X", "iPad8,2": "A12X", "iPad8,3": "A12X", "iPad8,4": "A12X",
+        "iPad8,5": "A12X", "iPad8,6": "A12X", "iPad8,7": "A12X", "iPad8,8": "A12X",
+        "iPad8,9": "A12Z", "iPad8,10": "A12Z", "iPad8,11": "A12Z", "iPad8,12": "A12Z",
+        "iPad11,1": "A12", "iPad11,2": "A12", "iPad11,3": "A12", "iPad11,4": "A12",
+        "iPad11,6": "A12", "iPad11,7": "A12",
+        "iPad13,1": "A14", "iPad13,2": "A14",
+        "iPad13,4": "M1", "iPad13,5": "M1", "iPad13,6": "M1", "iPad13,7": "M1",
+        "iPad13,8": "M1", "iPad13,9": "M1", "iPad13,10": "M1", "iPad13,11": "M1",
+        "iPad13,16": "A15", "iPad13,17": "A15",
+        "iPad13,18": "A13", "iPad13,19": "A13",
+        "iPad14,1": "A14", "iPad14,2": "A14",
+        "iPad14,5": "M1", "iPad14,6": "M1",
+        "iPad14,8": "M2", "iPad14,9": "M2", "iPad14,10": "M2", "iPad14,11": "M2",
+        "iPad15,3": "M2", "iPad15,4": "M2", "iPad15,8": "M2", "iPad15,9": "M2",
+        "iPad16,1": "A17 Pro", "iPad16,2": "A17 Pro",
+        "iPad16,3": "M4", "iPad16,4": "M4", "iPad16,6": "M4", "iPad16,7": "M4",
+        "iPod9,1": "A10"
+    ]
 }
 
 // MARK: - Flag explanations
@@ -510,6 +578,7 @@ enum DeviceInfo {
             memorySection(),
             storageSection(),
             batterySection(),
+            powerSection(),
             screenSection(),
             networkSection(network),
             localeSection(),
@@ -618,6 +687,33 @@ enum DeviceInfo {
             InfoRow(label: "Level", value: levelText, tier: .expert),
             InfoRow(label: "State", value: stateText, tier: .expert)
         ])
+    }
+
+    static func powerSection() -> InfoSection {
+        let info = ProcessInfo.processInfo
+        let l10n = LanguageManager.shared
+        let thermal: String
+        switch info.thermalState {
+        case .nominal: thermal = l10n.localize("power.thermal.nominal")
+        case .fair: thermal = l10n.localize("power.thermal.fair")
+        case .serious: thermal = l10n.localize("power.thermal.serious")
+        case .critical: thermal = l10n.localize("power.thermal.critical")
+        @unknown default: thermal = "n/a"
+        }
+        return InfoSection(titleKey: "section.power", rows: [
+            InfoRow(label: "power.thermal", value: thermal, tier: .expert),
+            InfoRow(label: "power.lowPower", value: info.isLowPowerModeEnabled ? "YES" : "NO", tier: .expert),
+            InfoRow(label: "power.appState", value: appStateText(), tier: .expert)
+        ])
+    }
+
+    private static func appStateText() -> String {
+        switch UIApplication.shared.applicationState {
+        case .active: return LanguageManager.shared.localize("power.state.active")
+        case .inactive: return LanguageManager.shared.localize("power.state.inactive")
+        case .background: return LanguageManager.shared.localize("power.state.background")
+        @unknown default: return "n/a"
+        }
     }
 
     static func screenSection() -> InfoSection {
@@ -731,22 +827,105 @@ enum DeviceInfo {
     }
 }
 
+// MARK: - Compatibility database
+
+struct CompatApp: Identifiable {
+    let id: String
+    let name: String
+    let categoryKey: String
+    let minIOS: String
+    let maxIOS: String?
+    let needsJIT: Bool
+    let noteKey: String?
+    let url: String?
+
+    var category: String { LanguageManager.shared.localize(categoryKey) }
+    var note: String? { noteKey.map { LanguageManager.shared.localize($0) } }
+    var iosRange: String {
+        if let max = maxIOS, max == minIOS { return minIOS }
+        if let max = maxIOS { return "\(minIOS)\u{2013}\(max)" }
+        return "\(minIOS)+"
+    }
+}
+
+enum CompatDatabase {
+    static let apps: [CompatApp] = [
+        CompatApp(id: "utm", name: "UTM",
+                  categoryKey: "compat.category.emulator", minIOS: "14.0", maxIOS: nil,
+                  needsJIT: true, noteKey: "compat.note.utm",
+                  url: "https://getutm.app"),
+        CompatApp(id: "dolphin", name: "DolphiniOS",
+                  categoryKey: "compat.category.emulator", minIOS: "13.0", maxIOS: "26.6",
+                  needsJIT: true, noteKey: "compat.note.dolphin", url: nil),
+        CompatApp(id: "amethyst", name: "Amethyst",
+                  categoryKey: "compat.category.emulator", minIOS: "14.0", maxIOS: nil,
+                  needsJIT: true, noteKey: nil, url: nil),
+        CompatApp(id: "melonx", name: "MeloNX",
+                  categoryKey: "compat.category.emulator", minIOS: "17.0", maxIOS: nil,
+                  needsJIT: true, noteKey: nil, url: nil),
+        CompatApp(id: "maci", name: "maciOS",
+                  categoryKey: "compat.category.emulator", minIOS: "17.0", maxIOS: nil,
+                  needsJIT: true, noteKey: "compat.note.macios", url: nil),
+        CompatApp(id: "geode", name: "Geode",
+                  categoryKey: "compat.category.emulator", minIOS: "17.0", maxIOS: nil,
+                  needsJIT: true, noteKey: nil, url: nil),
+        CompatApp(id: "manic", name: "Manic EMU",
+                  categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
+                  needsJIT: true, noteKey: nil, url: nil),
+        CompatApp(id: "flycast", name: "Flycast",
+                  categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
+                  needsJIT: true, noteKey: "compat.note.flycast", url: nil),
+        CompatApp(id: "melocafe", name: "MeloCafe",
+                  categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
+                  needsJIT: true, noteKey: nil, url: nil),
+        CompatApp(id: "armsx2", name: "ARMSX2",
+                  categoryKey: "compat.category.emulator", minIOS: "15.0", maxIOS: nil,
+                  needsJIT: true, noteKey: nil, url: nil),
+        CompatApp(id: "dukex", name: "DukeX",
+                  categoryKey: "compat.category.emulator", minIOS: "14.0", maxIOS: "27",
+                  needsJIT: true, noteKey: "compat.note.dukex", url: nil),
+        CompatApp(id: "ppsspp", name: "PPSSPP",
+                  categoryKey: "compat.category.emulator", minIOS: "11.0", maxIOS: nil,
+                  needsJIT: false, noteKey: "compat.note.ppsspp", url: nil),
+        CompatApp(id: "delta", name: "Delta",
+                  categoryKey: "compat.category.emulator", minIOS: "12.0", maxIOS: nil,
+                  needsJIT: false, noteKey: nil, url: nil),
+        CompatApp(id: "provenance", name: "Provenance",
+                  categoryKey: "compat.category.emulator", minIOS: "12.0", maxIOS: nil,
+                  needsJIT: false, noteKey: nil, url: nil),
+        CompatApp(id: "idos", name: "iDOS",
+                  categoryKey: "compat.category.emulator", minIOS: "11.0", maxIOS: nil,
+                  needsJIT: false, noteKey: nil, url: nil),
+        CompatApp(id: "sidestore", name: "SideStore",
+                  categoryKey: "compat.category.tool", minIOS: "16.0", maxIOS: nil,
+                  needsJIT: false, noteKey: "compat.note.sidestore",
+                  url: "https://sidestore.io"),
+        CompatApp(id: "stikdebug", name: "StikDebug",
+                  categoryKey: "compat.category.tool", minIOS: "17.4", maxIOS: nil,
+                  needsJIT: false, noteKey: "compat.note.stikdebug", url: nil),
+        CompatApp(id: "trollstore", name: "TrollStore",
+                  categoryKey: "compat.category.tool", minIOS: "14.0", maxIOS: "17.0",
+                  needsJIT: false, noteKey: "compat.note.trollstore", url: nil)
+    ]
+}
+
 // MARK: - Network monitor
 
 enum NetworkStatus {
     static func start(_ update: @escaping (String) -> Void) -> NWPathMonitor {
+        let l10n = LanguageManager.shared
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
-            var text = "Unknown"
+            var text = l10n.localize("network.status.unknown")
             if path.status == .satisfied {
-                if path.usesInterfaceType(.wifi) { text = "Wi-Fi" }
-                else if path.usesInterfaceType(.cellular) { text = "Cellular" }
-                else if path.usesInterfaceType(.wiredEthernet) { text = "Ethernet" }
-                else { text = "Online" }
+                if path.usesInterfaceType(.wifi) { text = l10n.localize("network.status.wifi") }
+                else if path.usesInterfaceType(.cellular) { text = l10n.localize("network.status.cellular") }
+                else if path.usesInterfaceType(.wiredEthernet) { text = l10n.localize("network.status.ethernet") }
+                else { text = l10n.localize("network.status.online") }
             } else if path.status == .requiresConnection {
-                text = "Requires connection"
+                text = l10n.localize("network.status.requiresConnection")
             } else {
-                text = "Offline"
+                text = l10n.localize("network.status.offline")
             }
             update(text)
         }
@@ -787,6 +966,9 @@ final class DiagnosticsModel: ObservableObject {
     @Published var networkTraffic: NetworkTrafficSnapshot?
     @Published var networkReceivedRate: Double = 0
     @Published var networkSentRate: Double = 0
+    @Published var livePoints: [LivePoint] = []
+    @Published var thermalState: ProcessInfo.ThermalState = .nominal
+    @Published var lowPowerMode = false
 
     private var monitor: NWPathMonitor?
     private var lastJIT: Bool?
@@ -880,6 +1062,16 @@ final class DiagnosticsModel: ObservableObject {
         processes = result.entries
         processListRestricted = result.restricted
 
+        thermalState = ProcessInfo.processInfo.thermalState
+        lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let vm = MemoryDetector.taskVM()
+        let selfCPU = processes.first(where: { $0.isSelf })?.cpuPercent ?? 0
+        livePoints.append(LivePoint(time: Date(),
+                                    cpu: selfCPU,
+                                    memoryMB: Double(vm?.footprint ?? 0) / 1_048_576.0,
+                                    availableMB: Double(os_proc_available_memory()) / 1_048_576.0))
+        if livePoints.count > 180 { livePoints = Array(livePoints.suffix(180)) }
+
         let net = NetworkTraffic.snapshot()
         if let net = net, let last = lastNetworkSnapshot, net.received >= last.received, net.sent >= last.sent {
             let elapsed = max(lastUpdated.distance(to: Date()), 0.001)
@@ -911,12 +1103,26 @@ final class DiagnosticsModel: ObservableObject {
             lines.append(contentsOf: recommendations)
         }
         lines.append("")
+        lines.append("SoC: \(JITDetector.socName())")
+        lines.append("Thermal: \(thermalStateText())")
+        lines.append("Low power mode: \(lowPowerMode ? l10n.localize("report.on") : l10n.localize("report.off"))")
+        lines.append("")
         for section in sections {
             let visible = section.rows.filter { mode.includes($0.tier) }
             guard !visible.isEmpty else { continue }
             lines.append("## \(section.title)")
             for row in visible {
                 lines.append("\(row.label): \(row.value)")
+            }
+            lines.append("")
+        }
+        if processListRestricted {
+            lines.append(l10n.localize("report.processesRestricted"))
+        }
+        if !processes.isEmpty {
+            lines.append("## \(l10n.localize("report.processes"))")
+            for p in processes {
+                lines.append("\(p.name) (PID \(p.pid)) \u{2013} \(p.state) \u{2013} CPU \(String(format: "%.1f", p.cpuPercent)) % \u{2013} \(MemoryDetector.bytes(Int64(clamping: p.memoryBytes)))")
             }
             lines.append("")
         }
@@ -929,6 +1135,58 @@ final class DiagnosticsModel: ObservableObject {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    func reportJSON() -> String {
+        let l10n = LanguageManager.shared
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let dateString = f.string(from: Date())
+        var sectionsDict: [String: [[String: String]]] = [:]
+        for section in sections {
+            let visible = section.rows.filter { mode.includes($0.tier) }
+            guard !visible.isEmpty else { continue }
+            sectionsDict[section.titleKey] = visible.map { ["label": $0.label, "value": $0.value] }
+        }
+        var processesArray: [[String: Any]] = []
+        for p in processes {
+            processesArray.append(["pid": p.pid, "name": p.name, "state": p.state,
+                                   "cpu": p.cpuPercent, "memory": p.memoryBytes, "isSelf": p.isSelf])
+        }
+        let log = jitLog.map { ["date": f.string(from: $0.date), "jitOn": $0.jitOn, "reason": $0.reason] }
+        let dict: [String: Any] = [
+            "generated": dateString,
+            "device": [
+                "name": UIDevice.current.name,
+                "model": UIDevice.current.model,
+                "identifier": JITDetector.sysctlString("hw.machine"),
+                "marketing": JITDetector.marketingName() ?? "",
+                "soc": JITDetector.socName(),
+                "ios": "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+            ],
+            "jit": ["enabled": jitEnabled, "reasons": jitReasons],
+            "memory": ["extended": extendedMemory, "reasons": memoryReasons],
+            "thermal": thermalStateText(),
+            "lowPower": lowPowerMode,
+            "processesRestricted": processListRestricted,
+            "processes": processesArray,
+            "recommendations": recommendations,
+            "sections": sectionsDict,
+            "history": log
+        ]
+        let data = (try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted])) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    func thermalStateText() -> String {
+        let l10n = LanguageManager.shared
+        switch thermalState {
+        case .nominal: return l10n.localize("power.thermal.nominal")
+        case .fair: return l10n.localize("power.thermal.fair")
+        case .serious: return l10n.localize("power.thermal.serious")
+        case .critical: return l10n.localize("power.thermal.critical")
+        @unknown default: return "n/a"
+        }
     }
 
     func historyCSV() -> String {
@@ -972,8 +1230,16 @@ final class DiagnosticsModel: ObservableObject {
 
         if major >= 27 {
             lines.append(l10n.localize("rec.v27"))
+            if JITDetector.isStikDebugTXMCompatible() {
+                lines.append(l10n.localize("rec.soc.stikFixApplies", JITDetector.socName()))
+            } else {
+                lines.append(l10n.localize("rec.soc.stikFixNotApplies", JITDetector.socName()))
+            }
         } else if major == 26 {
             lines.append(l10n.localize("rec.v26"))
+            if !JITDetector.isStikDebugTXMCompatible() {
+                lines.append(l10n.localize("rec.soc.stikFixNotApplies", JITDetector.socName()))
+            }
         } else if major == 18 {
             lines.append(l10n.localize(minor >= 4 ? "rec.v184" : "rec.v18"))
         } else if major == 17 {
@@ -986,8 +1252,14 @@ final class DiagnosticsModel: ObservableObject {
             }
         } else if major == 16 {
             lines.append(l10n.localize("rec.v16"))
+            if JITDetector.isCheckra1nCompatible() {
+                lines.append(l10n.localize("rec.soc.checkra1n", JITDetector.socName()))
+            }
         } else if major == 15 {
             lines.append(l10n.localize("rec.v15"))
+            if JITDetector.isCheckra1nCompatible() {
+                lines.append(l10n.localize("rec.soc.checkra1n", JITDetector.socName()))
+            }
         }
 
         lines.append(l10n.localize("rec.tipGetTaskAllow"))
