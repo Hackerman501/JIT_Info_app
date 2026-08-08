@@ -468,7 +468,10 @@ struct TrafficCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .glassCard()
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
     }
 }
 
@@ -476,7 +479,6 @@ struct SettingsTab: View {
     @ObservedObject var model: DiagnosticsModel
     @Binding var appearance: AppAppearance
     @EnvironmentObject private var l10n: LanguageManager
-    @AppStorage("liquidGlassEnabled") private var liquidGlassEnabled = false
 
     var body: some View {
         List {
@@ -519,7 +521,6 @@ struct SettingsTab: View {
                     .labelsHidden()
                 }
                 Toggle(l10n.localize("settings.notify"), isOn: $model.notifyOnChange)
-                Toggle(l10n.localize("settings.liquidGlass"), isOn: $liquidGlassEnabled)
             } header: {
                 Text(l10n.localize("settings.title"))
             } footer: {
@@ -527,9 +528,6 @@ struct SettingsTab: View {
                     Text(model.notificationsGranted
                          ? l10n.localize("settings.notificationsActive")
                          : l10n.localize("settings.notificationsDenied"))
-                }
-                if liquidGlassEnabled {
-                    Text(l10n.localize("settings.liquidGlass.note"))
                 }
             }
         }
@@ -567,7 +565,10 @@ struct StatusCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .glassCard()
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
     }
 }
 

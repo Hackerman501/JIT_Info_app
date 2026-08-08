@@ -147,8 +147,6 @@ private let enStrings: [String: String] = [
     "settings.notify": "Notify on JIT change",
     "settings.notificationsActive": "Notifications active \u{2013} you will be notified on every JIT change.",
     "settings.notificationsDenied": "Please allow notifications in iOS Settings.",
-    "settings.liquidGlass": "Liquid Glass",
-    "settings.liquidGlass.note": "Native iOS 26 glass look for the status cards (falls back to a subtle material on older systems).",
 
     "status.title": "Status",
     "status.updated": "Updated",
@@ -281,8 +279,6 @@ private let deStrings: [String: String] = [
     "settings.notify": "Bei JIT-Wechsel benachrichtigen",
     "settings.notificationsActive": "Benachrichtigungen aktiv \u{2013} du wirst bei jedem JIT-Wechsel informiert.",
     "settings.notificationsDenied": "Bitte erlaube Benachrichtigungen in den iOS-Einstellungen.",
-    "settings.liquidGlass": "Liquid Glass",
-    "settings.liquidGlass.note": "Nativer iOS-26-Glaseffekt f\u{00FC}r die Status-Karten (f\u{00E4}llt auf \u{00E4}lteren Systemen auf ein dezentes Material zur\u{00FC}ck).",
 
     "status.title": "Status",
     "status.updated": "Aktualisiert",
