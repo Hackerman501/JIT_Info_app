@@ -28,10 +28,12 @@ struct JITLiveLockScreenView: View {
                 Text("JIT Info")
                     .font(.headline)
                 Spacer()
-                if context.isStale {
-                    Text("Stale")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                if #available(iOS 16.2, *) {
+                    if context.isStale {
+                        Text("Stale")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             HStack(spacing: 10) {
@@ -71,35 +73,43 @@ struct JITLiveLockScreenView: View {
     }
 }
 
-// MARK: - Dynamic Island
+// MARK: - Activity widget
 
-struct JITLiveDynamicIsland: DynamicIsland {
-    let context: ActivityViewContext<JITLiveAttributes>
-
-    var body: DynamicIslandBody {
-        DynamicIslandExpandedRegion(.leading) {
-            Image(systemName: "externaldrive.fill")
-                .font(.title2)
-        }
-        DynamicIslandExpandedRegion(.trailing) {
-            statusText
-        }
-        DynamicIslandExpandedRegion(.bottom) {
-            HStack(spacing: 10) {
-                statusItem(title: "JIT",
-                           on: context.state.jitOn,
-                           color: context.state.jitOn ? .green : .red)
-                statusItem(title: "RAM",
-                           on: context.state.extendedMemory,
-                           color: context.state.extendedMemory ? .green : .red)
+struct JITLiveActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: JITLiveAttributes.self) { context in
+            JITLiveLockScreenView(context: context)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Image(systemName: "externaldrive.fill")
+                        .font(.title2)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text(context.state.jitOn ? "JIT ON" : "JIT OFF")
+                        .font(.callout.weight(.heavy))
+                        .foregroundColor(context.state.jitOn ? .green : .red)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    HStack(spacing: 10) {
+                        statusItem(title: "JIT",
+                                   on: context.state.jitOn,
+                                   color: context.state.jitOn ? .green : .red)
+                        statusItem(title: "RAM",
+                                   on: context.state.extendedMemory,
+                                   color: context.state.extendedMemory ? .green : .red)
+                    }
+                }
+            } compactLeading: {
+                Image(systemName: "externaldrive.fill")
+            } compactTrailing: {
+                Image(systemName: context.state.jitOn ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundColor(context.state.jitOn ? .green : .red)
+            } minimal: {
+                Image(systemName: context.state.jitOn ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundColor(context.state.jitOn ? .green : .red)
             }
         }
-    }
-
-    private var statusText: some View {
-        Text(context.state.jitOn ? "JIT ON" : "JIT OFF")
-            .font(.callout.weight(.heavy))
-            .foregroundColor(context.state.jitOn ? .green : .red)
     }
 
     private func statusItem(title: String, on: Bool, color: Color) -> some View {
@@ -113,18 +123,6 @@ struct JITLiveDynamicIsland: DynamicIsland {
             Text(on ? "ON" : "OFF")
                 .font(.caption2.weight(.heavy))
                 .foregroundColor(color)
-        }
-    }
-}
-
-// MARK: - Activity widget
-
-struct JITLiveActivityWidget: Widget {
-    var body: some WidgetConfiguration {
-        ActivityConfiguration(for: JITLiveAttributes.self) { context in
-            JITLiveLockScreenView(context: context)
-        } dynamicIsland: { context in
-            JITLiveDynamicIsland(context: context)
         }
     }
 }
