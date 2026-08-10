@@ -79,6 +79,7 @@ struct JITStatusWidgetView: View {
         }
     }
 
+    @ViewBuilder
     private var mainBody: some View {
         if !entry.dataAvailable {
             setupHint
@@ -120,6 +121,7 @@ struct JITStatusWidgetView: View {
         .padding(8)
     }
 
+    @ViewBuilder
     private var accessoryRectangular: some View {
         if !entry.dataAvailable {
             VStack(alignment: .leading, spacing: 2) {
@@ -149,6 +151,7 @@ struct JITStatusWidgetView: View {
         }
     }
 
+    @ViewBuilder
     private var accessoryCircular: some View {
         if !entry.dataAvailable {
             Image(systemName: "externaldrive")
