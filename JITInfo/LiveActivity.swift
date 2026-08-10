@@ -58,9 +58,13 @@ enum LiveActivityManager {
 
     private static func start(state: JITLiveAttributes.ContentState) {
         let attributes = JITLiveAttributes(deviceName: UIDevice.current.name)
-        let content = ActivityContent(state: state, staleDate: nil)
         do {
-            _ = try Activity.request(attributes: attributes, content: content, pushType: nil)
+            if #available(iOS 16.2, *) {
+                let content = ActivityContent(state: state, staleDate: nil)
+                _ = try Activity.request(attributes: attributes, content: content, pushType: nil)
+            } else {
+                _ = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
+            }
         } catch {
             // Live Activities can be disabled by the user or unavailable on the device.
         }

@@ -197,7 +197,7 @@ enum ProcessManager {
         guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else { return [:] }
         var map: [pid_t: ProcessMeta] = [:]
         for p in procs where p.kp_proc.p_pid > 0 {
-            map[p.kp_proc.p_pid] = ProcessMeta(state: p.kp_proc.p_stat, ppid: p.kp_proc.p_ppid)
+            map[p.kp_proc.p_pid] = ProcessMeta(state: p.kp_proc.p_stat, ppid: p.kp_eproc.e_ppid)
         }
         return map
     }
