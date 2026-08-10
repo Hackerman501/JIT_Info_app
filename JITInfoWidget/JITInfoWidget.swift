@@ -57,7 +57,25 @@ struct JITStatusWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: JITStatusEntry
 
+    @ViewBuilder
     var body: some View {
+        if #available(iOS 17.0, *) {
+            switch family {
+            case .accessoryRectangular, .accessoryCircular, .accessoryInline:
+                content
+            default:
+                content
+                    .containerBackground(for: .widget) {
+                        Color(.systemBackground)
+                    }
+            }
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if #available(iOS 16.0, *) {
             modernBody
         } else {
@@ -98,7 +116,6 @@ struct JITStatusWidgetView: View {
                 }
             }
         }
-        .containerBackgroundIfAvailable()
     }
 
     private var setupHint: some View {
@@ -211,19 +228,6 @@ struct JITStatusWidgetView: View {
     }
 }
 
-extension View {
-    @ViewBuilder
-    func containerBackgroundIfAvailable() -> some View {
-        if #available(iOS 17.0, *) {
-            containerBackground(for: .widget) {
-                Color(.systemBackground)
-            }
-        } else {
-            self
-        }
-    }
-}
-
 // MARK: - Widget
 
 struct JITStatusWidget: Widget {
@@ -231,10 +235,7 @@ struct JITStatusWidget: Widget {
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: JITStatusProvider()) { entry in
-            ZStack {
-                Color(.systemBackground)
-                JITStatusWidgetView(entry: entry)
-            }
+            JITStatusWidgetView(entry: entry)
         }
         .configurationDisplayName("JIT Status")
         .description("Shows whether JIT and extended memory are active.")
