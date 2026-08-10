@@ -81,20 +81,25 @@ struct JITStatusWidgetView: View {
 
     @ViewBuilder
     private var mainBody: some View {
-        if !entry.dataAvailable {
-            setupHint
-        } else {
-            switch family {
-            case .systemMedium:
-                HStack(spacing: 10) {
-                    statusPill(title: "JIT", on: entry.jitOn, reasons: entry.jitOn ? entry.reasons : [])
-                    statusPill(title: "RAM", on: entry.memoryExtended, reasons: [])
-                }
-                .padding(8)
-            default:
-                statusPill(title: "JIT", on: entry.jitOn, reasons: entry.reasons)
+        Group {
+            if !entry.dataAvailable {
+                setupHint
+            } else {
+                switch family {
+                case .systemMedium:
+                    HStack(spacing: 10) {
+                        statusPill(title: "JIT", on: entry.jitOn, reasons: entry.jitOn ? entry.reasons : [])
+                        statusPill(title: "RAM", on: entry.memoryExtended, reasons: [])
+                    }
                     .padding(8)
+                default:
+                    statusPill(title: "JIT", on: entry.jitOn, reasons: entry.reasons)
+                        .padding(8)
+                }
             }
+        }
+        .containerBackground(for: .widget) {
+            Color(.systemBackground)
         }
     }
 
