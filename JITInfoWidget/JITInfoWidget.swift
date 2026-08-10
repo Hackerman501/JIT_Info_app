@@ -60,15 +60,15 @@ struct JITStatusWidgetView: View {
     @ViewBuilder
     var body: some View {
         if #available(iOS 17.0, *) {
-            switch family {
-            case .accessoryRectangular, .accessoryCircular, .accessoryInline:
-                content
-            default:
-                content
-                    .containerBackground(for: .widget) {
+            content
+                .containerBackground(for: .widget) {
+                    switch family {
+                    case .accessoryRectangular, .accessoryCircular, .accessoryInline:
+                        Color.clear
+                    default:
                         Color(.systemBackground)
                     }
-            }
+                }
         } else {
             content
         }
@@ -254,5 +254,6 @@ struct JITStatusWidget: Widget {
 struct JITInfoWidgetBundle: WidgetBundle {
     var body: some Widget {
         JITStatusWidget()
+        JITLiveActivityWidget()
     }
 }

@@ -472,9 +472,11 @@ struct ProcessesTab: View {
     @EnvironmentObject private var l10n: LanguageManager
     @State private var pendingTerminate: ProcessEntry?
     @State private var sortOrder: ProcessSort = .cpu
+    @State private var searchText = ""
+    @State private var selected: ProcessEntry?
 
     private var sorted: [ProcessEntry] {
-        let list = model.processes
+        let list = filtered
         switch sortOrder {
         case .cpu:
             return list.sorted {
@@ -487,6 +489,14 @@ struct ProcessesTab: View {
             return list.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         case .pid:
             return list.sorted { $0.pid < $1.pid }
+        }
+    }
+
+    private var filtered: [ProcessEntry] {
+        guard !searchText.isEmpty else { return model.processes }
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return model.processes.filter {
+            $0.name.lowercased().contains(q) || "\($0.pid)".contains(q)
         }
     }
 
@@ -514,14 +524,23 @@ struct ProcessesTab: View {
                 }
             }
             ForEach(sorted) { entry in
-                ProcessRow(entry: entry, onTerminate: {
+                ProcessRow(entry: entry, onSelect: {
+                    selected = entry
+                }, onTerminate: {
                     pendingTerminate = entry
                 })
             }
         }
         .listStyle(.insetGrouped)
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: l10n.localize("processes.search"))
         .refreshable {
             model.refreshAll()
+        }
+        .sheet(item: $selected) { entry in
+            ProcessDetailView(entry: entry, onTerminate: {
+                pendingTerminate = entry
+            })
+            .environmentObject(l10n)
         }
         .confirmationDialog(
             Text(l10n.localize("processes.terminate")),
@@ -563,48 +582,109 @@ struct TerminateError: Identifiable {
 
 struct ProcessRow: View {
     let entry: ProcessEntry
+    let onSelect: () -> Void
     let onTerminate: () -> Void
     @EnvironmentObject private var l10n: LanguageManager
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(entry.name)
-                        .font(.callout.weight(entry.isSelf ? .bold : .regular))
-                        .lineLimit(1)
-                    if entry.isSelf {
-                        Text(l10n.localize("processes.self"))
-                            .font(.caption2.weight(.medium))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.15)))
-                            .foregroundColor(.accentColor)
+        Button(action: onSelect) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(entry.name)
+                            .font(.callout.weight(entry.isSelf ? .bold : .regular))
+                            .lineLimit(1)
+                        if entry.isSelf {
+                            Text(l10n.localize("processes.self"))
+                                .font(.caption2.weight(.medium))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    Text("PID \(entry.pid) \u{2022} \(entry.state)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(entry.cpuPercent, specifier: "%.1f") %")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                    Text(MemoryDetector.bytes(Int64(clamping: entry.memoryBytes)))
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+                if !entry.isSelf {
+                    Button(action: onTerminate) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(entry.isSelf ? Color.accentColor.opacity(0.08) : nil)
+    }
+}
+
+struct ProcessDetailView: View {
+    let entry: ProcessEntry
+    let onTerminate: () -> Void
+    @EnvironmentObject private var l10n: LanguageManager
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    HStack {
+                        Text(entry.name)
+                            .font(.title3.weight(.bold))
+                        Spacer()
+                        if entry.isSelf {
+                            Text(l10n.localize("processes.self"))
+                                .font(.caption2.weight(.medium))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                                .foregroundColor(.accentColor)
+                        }
                     }
                 }
-                Text("PID \(entry.pid) \u{2022} \(entry.state)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(entry.cpuPercent, specifier: "%.1f") %")
-                    .font(.caption.monospacedDigit())
-                    .foregroundColor(.secondary)
-                Text(MemoryDetector.bytes(Int64(clamping: entry.memoryBytes)))
-                    .font(.caption.monospacedDigit())
-                    .foregroundColor(.secondary)
-            }
-            if !entry.isSelf {
-                Button(action: onTerminate) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
+                Section {
+                    InfoRowView(row: InfoRow(label: "processes.detail.pid", value: "\(entry.pid)"), onInfo: {})
+                    if let ppid = entry.parentPid {
+                        InfoRowView(row: InfoRow(label: "processes.detail.ppid", value: "\(ppid)"), onInfo: {})
+                    }
+                    InfoRowView(row: InfoRow(label: "processes.detail.state", value: entry.state), onInfo: {})
+                    InfoRowView(row: InfoRow(label: "processes.cpu", value: String(format: "%.1f %%", entry.cpuPercent)), onInfo: {})
+                    InfoRowView(row: InfoRow(label: "processes.memory", value: MemoryDetector.bytes(Int64(clamping: entry.memoryBytes))), onInfo: {})
+                    InfoRowView(row: InfoRow(label: "processes.detail.virtual", value: MemoryDetector.bytes(Int64(clamping: entry.virtualBytes))), onInfo: {})
                 }
-                .buttonStyle(.borderless)
+                if !entry.isSelf {
+                    Section {
+                        Button(role: .destructive) {
+                            dismiss()
+                            onTerminate()
+                        } label: {
+                            Label(l10n.localize("processes.terminate"), systemImage: "xmark.circle")
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle(entry.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("OK") { dismiss() }
+                }
             }
         }
-        .padding(.vertical, 2)
-        .listRowBackground(entry.isSelf ? Color.accentColor.opacity(0.08) : nil)
     }
 }
 
@@ -755,6 +835,7 @@ struct SettingsTab: View {
     @ObservedObject var model: DiagnosticsModel
     @Binding var appearance: AppAppearance
     @EnvironmentObject private var l10n: LanguageManager
+    @AppStorage("appIcon") private var appIcon = "default"
 
     var body: some View {
         List {
@@ -797,13 +878,63 @@ struct SettingsTab: View {
                     .labelsHidden()
                 }
                 Toggle(l10n.localize("settings.haptics"), isOn: $model.hapticEnabled)
+                Toggle(l10n.localize("settings.liveActivity"), isOn: $model.liveActivityEnabled)
             } header: {
                 Text(l10n.localize("settings.title"))
             } footer: {
                 Text(l10n.localize("settings.privacy"))
             }
+
+            Section {
+                AppIconPicker(selection: $appIcon)
+            } header: {
+                Text(l10n.localize("settings.appIcon"))
+            } footer: {
+                Text(l10n.localize("settings.appIconHint"))
+            }
         }
         .listStyle(.insetGrouped)
+    }
+}
+
+enum AppIconOption: String, CaseIterable, Identifiable {
+    case `default`
+    case color = "AppIcon-Alt-Color"
+    case dark = "AppIcon-Alt-Dark"
+    case tinted = "AppIcon-Alt-Tinted"
+
+    var id: String { rawValue }
+
+    var title: String {
+        LanguageManager.shared.localize("settings.appIcon.\(rawValue)")
+    }
+
+    var imageName: String? {
+        rawValue == "default" ? nil : rawValue
+    }
+}
+
+struct AppIconPicker: View {
+    @Binding var selection: String
+    @EnvironmentObject private var l10n: LanguageManager
+
+    var body: some View {
+        HStack {
+            Text(l10n.localize("settings.appIcon"))
+            Spacer()
+            Picker("App Icon", selection: $selection) {
+                ForEach(AppIconOption.allCases) { option in
+                    Text(option.title).tag(option.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .onChange(of: selection) { newValue in
+                let name: String? = newValue == "default" ? nil : newValue
+                guard UIApplication.shared.supportsAlternateIcons else { return }
+                UIApplication.shared.setAlternateIconName(name) { _ in }
+            }
+        }
     }
 }
 

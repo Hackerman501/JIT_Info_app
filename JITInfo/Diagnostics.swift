@@ -1011,6 +1011,9 @@ final class DiagnosticsModel: ObservableObject {
     @Published var hapticEnabled = true {
         didSet { UserDefaults.standard.set(hapticEnabled, forKey: Keys.haptic) }
     }
+    @Published var liveActivityEnabled = true {
+        didSet { UserDefaults.standard.set(liveActivityEnabled, forKey: Keys.liveActivity) }
+    }
     @Published var jitEnabled = false
     @Published var jitPoints: [InfoRow] = []
     @Published var jitReasons: [String] = []
@@ -1041,6 +1044,7 @@ final class DiagnosticsModel: ObservableObject {
         static let mode = "appMode"
         static let refresh = "refreshInterval"
         static let haptic = "hapticEnabled"
+        static let liveActivity = "liveActivityEnabled"
         static let log = "jitLog"
     }
 
@@ -1074,6 +1078,7 @@ final class DiagnosticsModel: ObservableObject {
         let r = UserDefaults.standard.double(forKey: Keys.refresh)
         if r > 0 { refreshInterval = r }
         hapticEnabled = UserDefaults.standard.object(forKey: Keys.haptic) == nil ? true : UserDefaults.standard.bool(forKey: Keys.haptic)
+        liveActivityEnabled = UserDefaults.standard.object(forKey: Keys.liveActivity) == nil ? true : UserDefaults.standard.bool(forKey: Keys.liveActivity)
         loadLog()
         lastJIT = jitLog.first?.jitOn
     }
@@ -1116,6 +1121,8 @@ final class DiagnosticsModel: ObservableObject {
         memoryPoints = mem.points
         memoryReasons = mem.summary
 
+        updateLiveActivityIfNeeded()
+
         sections = DeviceInfo.allSections(network: network)
 
         let result = ProcessManager.list()
@@ -1150,6 +1157,16 @@ final class DiagnosticsModel: ObservableObject {
 
         lastUpdated = Date()
         writeSharedStatus(jit: jit, mem: mem)
+    }
+
+    private func updateLiveActivityIfNeeded() {
+        if liveActivityEnabled {
+            LiveActivityManager.update(jitOn: jitEnabled,
+                                       extendedMemory: extendedMemory,
+                                       reason: jitReasons.first)
+        } else if LiveActivityManager.isActive {
+            LiveActivityManager.stop()
+        }
     }
 
     private func writeSharedStatus(jit: JITDetector.JITResult, mem: MemoryDetector.MemoryResult) {
@@ -1208,7 +1225,11 @@ final class DiagnosticsModel: ObservableObject {
         if !processes.isEmpty {
             lines.append("## \(l10n.localize("report.processes"))")
             for p in processes {
-                lines.append("\(p.name) (PID \(p.pid)) \u{2013} \(p.state) \u{2013} CPU \(String(format: "%.1f", p.cpuPercent)) % \u{2013} \(MemoryDetector.bytes(Int64(clamping: p.memoryBytes)))")
+                var detail = "\(p.name) (PID \(p.pid)) \u{2013} \(p.state) \u{2013} CPU \(String(format: "%.1f", p.cpuPercent)) % \u{2013} \(MemoryDetector.bytes(Int64(clamping: p.memoryBytes)))"
+                if let ppid = p.parentPid {
+                    detail += " \u{2013} PPID \(ppid)"
+                }
+                lines.append(detail)
             }
             lines.append("")
         }
@@ -1244,7 +1265,9 @@ final class DiagnosticsModel: ObservableObject {
         var processesArray: [[String: Any]] = []
         for p in processes {
             processesArray.append(["pid": p.pid, "name": p.name, "state": p.state,
-                                   "cpu": p.cpuPercent, "memory": p.memoryBytes, "isSelf": p.isSelf])
+                                   "cpu": p.cpuPercent, "memory": p.memoryBytes,
+                                   "virtual": p.virtualBytes, "ppid": p.parentPid as Any,
+                                   "isSelf": p.isSelf])
         }
         let log = jitLog.map { ["date": f.string(from: $0.date), "jitOn": $0.jitOn, "reason": $0.reason] }
         let dict: [String: Any] = [

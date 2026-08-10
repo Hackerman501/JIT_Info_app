@@ -9,6 +9,8 @@ struct ProcessEntry: Identifiable {
     let state: String
     let cpuPercent: Double
     let memoryBytes: UInt64
+    let virtualBytes: UInt64
+    let parentPid: pid_t?
     let isSelf: Bool
 
     var id: pid_t { pid }
@@ -109,8 +111,9 @@ enum ProcessManager {
 
         for pid in pids.prefix(min(written, pids.count)) where pid > 0 {
             let name = processName(pid)
-            let state = stateMap[pid].map(stateString) ?? LanguageManager.shared.localize("processes.state.unknown")
-            entries.append(buildEntry(pid: pid, name: name, state: state, now: now, cpuCount: cpuCount, current: &current))
+            let meta = stateMap[pid]
+            let state = meta.map { stateString($0.state) } ?? LanguageManager.shared.localize("processes.state.unknown")
+            entries.append(buildEntry(pid: pid, name: name, state: state, ppid: meta?.ppid, now: now, cpuCount: cpuCount, current: &current))
         }
 
         lastSnapshots = current
@@ -124,21 +127,25 @@ enum ProcessManager {
 
     private static func selfOnlyResult(now: TimeInterval, cpuCount: Double) -> ProcessListResult {
         var current: [pid_t: Snapshot] = [:]
-        let entry = buildEntry(pid: getpid(),
+        let selfPid = getpid()
+        let meta = processStateMap()[selfPid]
+        let entry = buildEntry(pid: selfPid,
                                name: selfProcessName(),
-                               state: LanguageManager.shared.localize("processes.state.unknown"),
+                               state: meta.map { stateString($0.state) } ?? LanguageManager.shared.localize("processes.state.unknown"),
+                               ppid: meta?.ppid,
                                now: now, cpuCount: cpuCount, current: &current)
         lastSnapshots = current
         return ProcessListResult(entries: [entry], restricted: true)
     }
 
-    private static func buildEntry(pid: pid_t, name: String, state: String,
+    private static func buildEntry(pid: pid_t, name: String, state: String, ppid: pid_t?,
                                    now: TimeInterval, cpuCount: Double,
                                    current: inout [pid_t: Snapshot]) -> ProcessEntry {
         let info = taskInfo(pid: pid)
         let user = info?.totalUser ?? 0
         let sys = info?.totalSystem ?? 0
         let memory = info?.residentSize ?? 0
+        let virtual = info?.virtualSize ?? 0
 
         var cpu = 0.0
         if let prev = lastSnapshots[pid] {
@@ -157,6 +164,8 @@ enum ProcessManager {
                             state: state,
                             cpuPercent: cpu,
                             memoryBytes: memory,
+                            virtualBytes: virtual,
+                            parentPid: ppid,
                             isSelf: pid == getpid())
     }
 
@@ -174,16 +183,21 @@ enum ProcessManager {
 
     // MARK: helpers
 
-    private static func processStateMap() -> [pid_t: CChar] {
+    private struct ProcessMeta {
+        let state: CChar
+        let ppid: pid_t
+    }
+
+    private static func processStateMap() -> [pid_t: ProcessMeta] {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
         var size = 0
         guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [:] }
         let count = size / MemoryLayout<kinfo_proc>.stride
         var procs = [kinfo_proc](repeating: kinfo_proc(), count: count)
         guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else { return [:] }
-        var map: [pid_t: CChar] = [:]
+        var map: [pid_t: ProcessMeta] = [:]
         for p in procs where p.kp_proc.p_pid > 0 {
-            map[p.kp_proc.p_pid] = p.kp_proc.p_stat
+            map[p.kp_proc.p_pid] = ProcessMeta(state: p.kp_proc.p_stat, ppid: p.kp_proc.p_ppid)
         }
         return map
     }

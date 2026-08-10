@@ -15,6 +15,19 @@ Die App hat **drei Modi** (oben umschaltbar):
 - **Dev** – alles, für Entwickler: zusätzlich Kernel-Build, SoC/Board, CPU-Frequenz,
   RLIMIT-Werte, VM-Statistiken, PID/PPID, Executable-Pfad und Entitlement-Präsenz.
 
+> **Mindestanforderung:** iOS 16.1 (Live Activities, Lockscreen-Widgets, Charts, App Intents).
+
+## Features
+
+- **Live Activity** – der JIT-/Memory-Status läuft als Live Activity auf dem Sperrbildschirm
+  und in der Dynamic Island (in den Einstellungen abschaltbar, per Kurzbefehl steuerbar).
+- **Widgets** – Home-Screen-Widgets (Small/Medium) und iOS-16-Lockscreen-Widgets
+  (Rectangular, Circular, Inline) mit Live-Status aus der App Group.
+- **App Intents / Kurzbefehle** – JIT-Status, Uptime, Geräteinfo, Speicher, Akku abfragen
+  sowie Live Activities starten/stoppen.
+- **Prozessliste** – sortier- und durchsuchbar, mit Detailansicht (PID, PPID, CPU, RAM, virtueller Speicher).
+- **Alternative App-Symbole** – Farbe, Dunkel und Tinted direkt in den Einstellungen wählbar.
+
 ## Was die App erkennt
 
 ### JIT
