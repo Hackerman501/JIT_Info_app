@@ -98,9 +98,7 @@ struct JITStatusWidgetView: View {
                 }
             }
         }
-        .containerBackground(for: .widget) {
-            Color(.systemBackground)
-        }
+        .containerBackgroundIfAvailable()
     }
 
     private var setupHint: some View {
@@ -210,6 +208,19 @@ struct JITStatusWidgetView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(.secondarySystemBackground))
         )
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func containerBackgroundIfAvailable() -> some View {
+        if #available(iOS 17.0, *) {
+            containerBackground(for: .widget) {
+                Color(.systemBackground)
+            }
+        } else {
+            self
+        }
     }
 }
 
