@@ -32,7 +32,7 @@ enum JITStatusStore {
 
 struct JITStatusProvider: TimelineProvider {
     func placeholder(in context: Context) -> JITStatusEntry {
-        JITStatusEntry(date: Date(), jitOn: false, memoryExtended: false, reasons: [], lastUpdated: nil)
+        JITStatusEntry(date: Date(), jitOn: true, memoryExtended: true, reasons: ["Developer mode on"], lastUpdated: Date())
     }
 
     func getSnapshot(in context: Context, completion: @escaping (JITStatusEntry) -> Void) {
@@ -53,17 +53,82 @@ struct JITStatusWidgetView: View {
     let entry: JITStatusEntry
 
     var body: some View {
+        if #available(iOS 16.0, *) {
+            modernBody
+        } else {
+            mainBody
+        }
+    }
+
+    @ViewBuilder
+    private var modernBody: some View {
+        switch family {
+        case .accessoryRectangular:
+            accessoryRectangular
+        case .accessoryCircular:
+            accessoryCircular
+        case .accessoryInline:
+            accessoryInline
+        default:
+            mainBody
+        }
+    }
+
+    private var mainBody: some View {
         switch family {
         case .systemMedium:
-            HStack {
+            HStack(spacing: 10) {
                 statusPill(title: "JIT", on: entry.jitOn, reasons: entry.jitOn ? entry.reasons : [])
-                Spacer()
-                statusPill(title: "RAM", on: entry.memoryExtended, reasons: entry.memoryExtended ? [] : [])
+                statusPill(title: "RAM", on: entry.memoryExtended, reasons: [])
             }
             .padding(8)
         default:
             statusPill(title: "JIT", on: entry.jitOn, reasons: entry.reasons)
                 .padding(8)
+        }
+    }
+
+    private var accessoryRectangular: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(entry.jitOn ? Color.green : Color.red)
+                    .frame(width: 6, height: 6)
+                Text("JIT")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+            }
+            Text(entry.jitOn ? "ON" : "OFF")
+                .font(.system(.headline, design: .rounded).weight(.heavy))
+                .foregroundColor(entry.jitOn ? .green : .red)
+            if let first = entry.reasons.first {
+                Text(first)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var accessoryCircular: some View {
+        ZStack {
+            Circle()
+                .stroke(entry.jitOn ? Color.green : Color.red, lineWidth: 3)
+            VStack(spacing: 2) {
+                Circle()
+                    .fill(entry.jitOn ? Color.green : Color.red)
+                    .frame(width: 4, height: 4)
+                Text(entry.jitOn ? "ON" : "OFF")
+                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+            }
+        }
+        .padding(4)
+    }
+
+    private var accessoryInline: some View {
+        HStack(spacing: 4) {
+            Image(systemName: entry.jitOn ? "checkmark.seal.fill" : "seal")
+            Text("JIT \(entry.jitOn ? "ON" : "OFF")")
         }
     }
 
@@ -111,7 +176,14 @@ struct JITStatusWidget: Widget {
         }
         .configurationDisplayName("JIT Status")
         .description("Shows whether JIT and extended memory are active.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies(families)
+    }
+
+    private var families: [WidgetFamily] {
+        if #available(iOS 16.0, *) {
+            return [.systemSmall, .systemMedium, .accessoryRectangular, .accessoryCircular, .accessoryInline]
+        }
+        return [.systemSmall, .systemMedium]
     }
 }
 
